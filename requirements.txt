@@ -1,0 +1,3 @@
+numpy>=1.24
+matplotlib>=3.7   # figures only
+pytest>=7         # tests only

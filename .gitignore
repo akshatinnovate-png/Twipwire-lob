@@ -1,0 +1,8 @@
+data/lobster/
+data/btc/
+data/cache/
+__pycache__/
+*.pyc
+scratch_*.py
+.pytest_cache/
+results/run_log.txt

@@ -1,0 +1,488 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TRIPWIRE-LOB</title>
+<style>
+:root{
+  --pink:#f2879f; --pink2:#ee6f8e; --hot:#ff4fd8; --sky:#cfe6ff; --ink:#231c1f; --paper:#f4f1f2;
+  --grey:#d6d2d3; --mid:#9a9093; --teal:#2f7f7a; --red:#c0263a; --white:#ffffff;
+  --mono:"JetBrains Mono","IBM Plex Mono","SFMono-Regular",ui-monospace,Menlo,Consolas,monospace;
+  --sans:"Neue Haas Grotesk Display","Helvetica Neue","Inter",Arial,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--white);color:var(--ink);font-family:var(--sans)}
+a{color:inherit}
+/* ---------------------------------------------------------------- nav */
+nav{position:sticky;top:0;z-index:50;display:flex;justify-content:space-between;align-items:center;padding:8px 10px;pointer-events:none}
+nav .pill{pointer-events:auto;background:var(--white);padding:7px 12px;font-size:20px;font-weight:500;letter-spacing:-.01em;text-decoration:none;border:0;cursor:pointer;font-family:var(--sans)}
+nav .pill.dark{background:var(--ink);color:var(--white)}
+nav .mid{display:flex;gap:8px}
+nav .right{display:flex;gap:6px;align-items:center}
+#status-pill{font-family:var(--mono);font-size:13px;padding:9px 12px}
+#status-pill .dot{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--teal);margin-right:6px;vertical-align:middle}
+#status-pill.alarm .dot{background:var(--red);animation:blink .5s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+/* ---------------------------------------------------------------- hero */
+.hero{position:relative;margin-top:-56px;padding:120px 16px 60px;min-height:640px;overflow:hidden;
+  background:
+   radial-gradient(60% 55% at 12% 30%, #ff77e9 0%, rgba(255,119,233,.0) 70%),
+   radial-gradient(45% 50% at 90% 25%, #ff6fd9 0%, rgba(255,111,217,0) 70%),
+   radial-gradient(70% 60% at 50% 0%, var(--sky) 0%, rgba(207,230,255,0) 70%),
+   radial-gradient(50% 60% at 80% 80%, #ff9bd9 0%, rgba(255,155,217,0) 70%),
+   linear-gradient(180deg,#e7f1ff 0%, #ffd0ef 55%, #ffffff 100%)}
+.hero::after{content:"";position:absolute;inset:0;pointer-events:none;opacity:.35;mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .9  0 0 0 0 .3  0 0 0 0 .7  0 0 0 .55 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>")}
+.cards{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;gap:30px}
+.card{width:min(560px,100%);border:2px solid var(--ink);background:#dcdcdc;box-shadow:0 0 0 4px #dcdcdc, 0 0 0 6px var(--ink)}
+.card .bar{background:var(--ink);color:#eee;font-family:var(--mono);font-size:15px;padding:5px 8px}
+.card .body{font-family:var(--mono);text-align:center;padding:16px 14px 20px;font-size:17px;line-height:1.5}
+.card .btn{display:inline-block;margin-top:14px;background:var(--ink);color:#fff;padding:12px 26px;font-family:var(--mono);font-size:17px;text-decoration:none;cursor:pointer;border:0}
+.card .link{text-decoration:underline;cursor:pointer;margin-top:10px;display:inline-block}
+.intro{text-align:center;font-size:22px;font-weight:500;letter-spacing:-.01em;margin:70px 0 10px;position:relative;z-index:2}
+.intro .dots{letter-spacing:1px;color:var(--ink)}
+.giant{font-family:var(--sans);font-weight:600;letter-spacing:-.045em;line-height:.86;text-align:center;margin:0;color:var(--ink)}
+.giant.xl{font-size:clamp(48px,10.5vw,170px)}
+.giant.lg{font-size:clamp(40px,8vw,130px)}
+.vertical-code{position:absolute;left:18px;bottom:20px;writing-mode:vertical-rl;transform:rotate(180deg);font-family:var(--mono);font-size:12px;color:#5a4a50;z-index:2;max-height:80%;overflow:hidden}
+/* ---------------------------------------------------------------- desktop */
+.desktop-wrap{background:var(--white);padding:40px 8px 8px}
+.chrome-line{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;color:#777;padding:0 12px 10px}
+.desktop{position:relative;background-color:var(--pink);
+  background-image:radial-gradient(rgba(35,28,31,.55) 1px, transparent 1.3px);background-size:9px 9px;
+  padding:56px 18px 22px;border:1px solid #c66}
+.desk-tag{position:absolute;top:12px;left:12px;background:var(--ink);color:#fff;font-family:var(--mono);font-size:16px;padding:4px 8px}
+.grid{display:grid;grid-template-columns:repeat(12,1fr);gap:16px}
+.win{background:var(--grey);border:2px solid var(--ink);box-shadow:3px 3px 0 rgba(35,28,31,.55);min-width:0;display:flex;flex-direction:column}
+.win>.title{background:var(--ink);color:#eee;font-family:var(--mono);font-size:14px;padding:4px 8px;display:flex;justify-content:space-between;align-items:center;cursor:default;user-select:none}
+.win>.title .x{opacity:.7}
+.win>.content{padding:10px;font-family:var(--mono);font-size:13px;flex:1;min-height:0}
+.win .inner{background:var(--paper);border:1px solid #8d8689}
+.badge{display:inline-block;background:var(--ink);color:#fff;font-family:var(--mono);font-size:22px;padding:2px 8px;margin-bottom:4px}
+.chip{display:inline-block;background:#c9c4c6;padding:2px 7px;margin:2px 3px 0 0;font-size:12px}
+canvas{display:block;width:100%}
+.ctl{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ctl button,.seg button{font-family:var(--mono);font-size:13px;border:2px solid var(--ink);background:var(--paper);padding:10px 6px;cursor:pointer;text-align:left}
+.ctl button:hover,.seg button:hover{background:#fff}
+.ctl button.danger{background:var(--ink);color:#fff}
+.ctl button.danger:hover{background:var(--red)}
+.ctl button small{display:block;opacity:.7;font-size:11px;margin-top:2px}
+.seg{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.seg button.on{background:var(--ink);color:#fff}
+.row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dotted #a99}
+.row b{font-weight:600}
+.big-num{font-size:30px;font-weight:600;letter-spacing:-.02em}
+.log{height:220px;overflow:auto;font-size:12px;line-height:1.45;background:#121012;color:#e8e2e4;padding:8px}
+.log .a{color:#ff7aa2}.log .f{color:#7fd6cf}.log .s{color:#ffd36b}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;margin-top:6px}
+.legend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:4px}
+.flash{animation:flash 1s ease-out}
+@keyframes flash{0%{box-shadow:0 0 0 6px var(--red)}100%{box-shadow:3px 3px 0 rgba(35,28,31,.55)}}
+input[type=range]{width:100%}
+/* ---------------------------------------------------------------- pink sections */
+.pinksec{background:var(--pink);color:#3a2a2f;padding:80px 16px 70px;position:relative}
+.corner{position:relative;padding:40px 10px}
+.corner::before,.corner::after{content:"";position:absolute;width:16px;height:16px;border:1.5px solid #3a2a2f}
+.corner::before{top:0;left:0;border-right:0;border-bottom:0}
+.corner::after{bottom:0;right:0;border-left:0;border-top:0}
+.cols{display:grid;grid-template-columns:repeat(3,1fr);gap:28px;margin-top:40px}
+.cols .col{border-left:1.5px solid #3a2a2f;padding-left:14px}
+.cols h4{font-family:var(--mono);font-weight:500;font-size:14px;margin:0 0 50px}
+.cols p{font-size:clamp(18px,2vw,26px);line-height:1.15;letter-spacing:-.01em;margin:0}
+.b64{font-family:var(--mono);font-size:12px;word-break:break-all;line-height:1.35}
+.stat-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-top:40px}
+.stat{border-top:1.5px solid #3a2a2f;padding-top:10px}
+.stat .v{font-size:clamp(34px,4.5vw,64px);font-weight:600;letter-spacing:-.04em;line-height:1}
+.stat .k{font-family:var(--mono);font-size:12px;margin-top:8px}
+.fineprint{font-family:var(--mono);font-size:13px;margin-top:18px}
+.fineprint a{text-decoration:underline}
+select{font-family:var(--mono);font-size:13px;padding:6px;border:2px solid var(--ink);background:var(--paper)}
+.method .win .content{font-size:13px;line-height:1.5}
+.formula{font-family:var(--mono);background:#121012;color:#f6d6df;padding:8px;margin:8px 0;font-size:12px;overflow-x:auto;white-space:pre}
+table.t{border-collapse:collapse;width:100%;font-family:var(--mono);font-size:12px}
+table.t td,table.t th{border-bottom:1px dotted #a99;padding:4px 6px;text-align:right}
+table.t td:first-child,table.t th:first-child{text-align:left}
+table.t tr.us td{font-weight:700;background:#fff}
+footer{background:var(--pink);padding:0 8px 8px}
+footer .bar{display:flex;justify-content:space-between;align-items:stretch;background-image:radial-gradient(rgba(35,28,31,.7) 1px, transparent 1.3px);background-size:6px 6px;border:1px solid var(--ink);padding:0}
+footer .ver{background:var(--pink);border-right:1px solid var(--ink)}
+footer .ver .t{background:var(--ink);color:#eee;font-family:var(--mono);font-size:14px;padding:3px 8px}
+footer .ver .b{font-family:var(--mono);font-size:14px;padding:8px 12px;line-height:1.5}
+footer .life{background:var(--pink);border-left:1px solid var(--ink);padding:6px;text-align:center;font-family:var(--mono);font-size:13px}
+@media (max-width:1100px){.grid>.win{grid-column:1/-1 !important}.cols,.stat-row{grid-template-columns:1fr 1fr}}
+@media (max-width:640px){nav .mid{display:none}.cols,.stat-row{grid-template-columns:1fr}.ctl{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<nav>
+  <a class="pill" href="#top">TRIPWIRE-LOB</a>
+  <div class="mid"><a class="pill" href="#cockpit">Cockpit</a><a class="pill" href="#evidence">Evidence</a><a class="pill" href="#method">Method</a></div>
+  <div class="right"><span class="pill" id="status-pill"><span class="dot"></span><span id="status-text">connecting…</span></span><a class="pill dark" href="#cockpit">Inject a Shock</a></div>
+</nav>
+
+<section class="hero" id="top">
+  <div class="cards">
+    <div class="card">
+      <div class="bar">Dec 15, 2026 ▪ Perceptron Finals ▪ Theme 3 / Problem 4</div>
+      <div class="body">ORDER-BOOK MODELS FAIL QUIETLY<br>Ours raises its hand first.<br>
+        <a class="btn" href="#cockpit">Open the cockpit</a></div>
+    </div>
+    <div class="card">
+      <div class="bar">Evidence ▪ LOBSTER AAPL · AMZN · MSFT ▪ 21 Jun 2012</div>
+      <div class="body">🧪 Every number on this page is recomputed by one script<br><span style="font-size:13px">python scripts/run_benchmarks.py</span><br><a class="link" href="#evidence">See the evidence</a></div>
+    </div>
+  </div>
+  <div class="intro">Introducing TRIPWIRE <span class="dots">........................</span> Forecasts that know when they broke</div>
+  <h1 class="giant xl" style="position:relative;z-index:2">Sequential Alarms,<br>Tracked Experts,<br>Loud Degradation.</h1>
+  <div class="vertical-code" id="vcode"></div>
+</section>
+
+<!-- ============================================================= COCKPIT -->
+<section class="desktop-wrap" id="cockpit">
+  <div class="chrome-line"><span>⁘ ⌘</span><span id="clockline">--</span><span>⌘ ⁘</span></div>
+  <div class="desktop">
+    <div class="desk-tag">TW.OS1 — live engine</div>
+    <div class="grid">
+      <!-- forecast -->
+      <div class="win" id="w-forecast" style="grid-column:span 8">
+        <div class="title"><span>FORECAST ▸ ŷ ± q (ticks), realised move, calls</span><span class="x">⊠</span></div>
+        <div class="content">
+          <div class="inner"><canvas id="c-price" height="150"></canvas></div>
+          <div class="inner" style="margin-top:6px"><canvas id="c-fc" height="200"></canvas></div>
+          <div class="legend"><span><i style="background:#231c1f"></i>mid / level</span><span><i style="background:#f2879f;height:8px"></i>90 % interval ŷ ± q</span><span><i style="background:#2f7f7a"></i>forecast ŷ</span><span><i style="background:#7a6f73"></i>realised move (after h events)</span><span>▲▼ directional calls</span><span><i style="background:#c0263a"></i>alarm</span></div>
+        </div>
+      </div>
+      <!-- control -->
+      <div class="win" style="grid-column:span 4">
+        <div class="title"><span>SHOCK CONTROL</span><span class="x">⊠</span></div>
+        <div class="content">
+          <div>Data source</div>
+          <div class="seg" id="sources"></div>
+          <div class="ctl">
+            <button class="danger" onclick="shock('concept')">CONCEPT FLIP<small>P(Y|X) reverses, P(X) identical</small></button>
+            <button class="danger" onclick="shock('covariate')">COVARIATE SHOCK<small>2.2× order flow, wider spread</small></button>
+            <button class="danger" onclick="shock('coupled')">LIQUIDITY SWEEP<small>both at once</small></button>
+            <button onclick="shock('calm')">BACK TO CALM<small>restore regime A</small></button>
+          </div>
+          <div style="margin-top:10px">Speed <b id="speedv">400</b> events/s</div>
+          <input type="range" id="speed" min="50" max="6000" step="50" value="400" oninput="setSpeed(this.value)">
+          <div class="seg"><button onclick="post({action:'pause'})">⏯ pause</button><button onclick="post({action:'reset'})">↺ restart</button></div>
+          <div style="font-size:11px;line-height:1.4;margin-top:4px">Ground-truth regime (hidden from the model): <b id="regime">–</b></div>
+        </div>
+      </div>
+      <!-- detectors -->
+      <div class="win" id="w-det" style="grid-column:span 8">
+        <div class="title"><span>SEQUENTIAL DETECTORS ▸ Shiryaev–Roberts log10(1+R)</span><span class="x">⊠</span></div>
+        <div class="content">
+          <div class="inner"><canvas id="c-det" height="170"></canvas></div>
+          <div class="legend"><span><i style="background:#2f7f7a"></i>Monitor F (label-free, sees features now)</span><span><i style="background:#231c1f"></i>Monitor R (label-aware, sees matured errors)</span><span><i style="background:#c0263a"></i>threshold A ⇒ ≤ 1 false alarm per ARL</span></div>
+        </div>
+      </div>
+      <!-- telemetry -->
+      <div class="win" style="grid-column:span 4">
+        <div class="title"><span>Clock Tool 1.1 ▸ TELEMETRY</span><span class="x">⊠</span></div>
+        <div class="content" id="telemetry"></div>
+      </div>
+      <!-- pool -->
+      <div class="win" id="w-pool" style="grid-column:span 5">
+        <div class="title"><span>EXPERT POOL ▸ fixed-share weights</span><span class="x">⊠</span></div>
+        <div class="content"><div class="inner"><canvas id="c-pool" height="210"></canvas></div>
+          <div class="legend"><span>■ learning</span><span>▨ frozen regime head</span><span>□ empty slot</span></div></div>
+      </div>
+      <!-- book -->
+      <div class="win" style="grid-column:span 3">
+        <div class="title"><span>BOOK ▸ 10 levels</span><span class="x">⊠</span></div>
+        <div class="content"><div class="inner"><canvas id="c-book" height="230"></canvas></div></div>
+      </div>
+      <!-- log -->
+      <div class="win" style="grid-column:span 4">
+        <div class="title"><span>EVENT LOG</span><span class="x">⊠</span></div>
+        <div class="content" style="padding:0"><div class="log" id="log"></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================= THESIS -->
+<section class="pinksec">
+  <div class="corner"><h2 class="giant lg" style="color:#3a2a2f">We Treat Silent<br>Degradation As<br>A Statistics Problem</h2></div>
+  <div class="cols">
+    <div class="col"><h4>Not retraining</h4><p>Rolling KS tests overlapping windows of dependent data at every event. It has no false-alarm control — on calm data it fired <b id="ks-fa">–</b> times per 50k events.</p></div>
+    <div class="col"><h4>A stated error rate</h4><p>Conformal p-values feed a Shiryaev–Roberts statistic. Under the null, R<sub>t</sub> − t is a martingale, so alarming at A gives average run length ≥ A.</p></div>
+    <div class="col"><h4>[B.64]</h4><div class="b64" id="b64"></div></div>
+  </div>
+</section>
+
+<!-- ============================================================= EVIDENCE -->
+<section class="pinksec" id="evidence" style="padding-top:20px">
+  <div class="corner"><h2 class="giant lg" style="color:#3a2a2f;text-align:left" id="headline">Lower Cost Of Delay.<br>Calibrated Alarms.</h2>
+    <div class="fineprint">*Synthetic 2×2 benchmark, mean over seeds; real-data rows on LOBSTER 21-Jun-2012. Full tables: results/tables.md</div>
+  </div>
+  <div class="stat-row" id="stats"></div>
+  <div class="desktop" style="margin-top:50px">
+    <div class="desk-tag">REPLAY ▸ recorded benchmark runs</div>
+    <div class="seg" style="margin-left:0"><select id="replay-sel"></select><span id="replay-title" style="font-family:var(--mono);font-size:13px;align-self:center;background:var(--ink);color:#fff;padding:6px 8px"></span></div>
+    <div class="grid">
+      <div class="win" style="grid-column:span 6"><div class="title"><span>rolling squared error</span><span class="x">⊠</span></div>
+        <div class="content"><div class="inner"><canvas id="r-mse" height="200"></canvas></div>
+        <div class="legend"><span><i style="background:#231c1f"></i>TRIPWIRE</span><span><i style="background:#9a9093"></i>B1 frozen ridge</span><span><i style="background:#2f7f7a"></i>B4 best fixed-forgetting RLS (hindsight λ)</span><span><i style="background:#c0263a"></i>true change</span></div></div></div>
+      <div class="win" style="grid-column:span 6"><div class="title"><span>detectors (▼ = rolling-KS alarm)</span><span class="x">⊠</span></div>
+        <div class="content"><div class="inner"><canvas id="r-det" height="200"></canvas></div></div></div>
+      <div class="win" style="grid-column:span 6"><div class="title"><span>fixed-share weights</span><span class="x">⊠</span></div>
+        <div class="content"><div class="inner"><canvas id="r-w" height="200"></canvas></div></div></div>
+      <div class="win" style="grid-column:span 6"><div class="title"><span>coverage (target 90 %) and call rate</span><span class="x">⊠</span></div>
+        <div class="content"><div class="inner"><canvas id="r-cov" height="200"></canvas></div></div></div>
+      <div class="win" style="grid-column:span 12"><div class="title"><span>results ▸ headline tables</span><span class="x">⊠</span></div>
+        <div class="content" id="tables">Run <b>python scripts/run_benchmarks.py</b> to populate.</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================= METHOD -->
+<section class="pinksec method" id="method" style="padding-top:20px">
+  <div class="corner"><h2 class="giant lg" style="color:#3a2a2f">Four Small Layers,<br>Each With A Guarantee</h2></div>
+  <div class="desktop" style="margin-top:40px">
+    <div class="desk-tag">ARCHITECTURE</div>
+    <div class="grid">
+      <div class="win" style="grid-column:span 3"><div class="title"><span>A ▸ FEATURES</span><span class="x">⊠</span></div><div class="content">
+        <span class="badge">d=16</span><br>multi-level OFI / trailing depth (L1–L5, deep L6–10), micro-price − mid, 4 depth imbalances, log-depth slopes, log spread, 20/200 vol ratio, past h-return.
+        <div><span class="chip">✣ Cont–Kukanov–Stoikov</span><span class="chip">✣ Xu–Gould–Howison</span></div></div></div>
+      <div class="win" style="grid-column:span 3"><div class="title"><span>B ▸ EXPERT POOL</span><span class="x">⊠</span></div><div class="content">
+        <span class="badge">K=9</span><br>frozen ridge · RLS λ∈{.998,.9995,.99995,1} · 4 alarm-spawned heads, frozen when the next spawns.
+        <div class="formula">w ← (1−α)·w·e^(−η ℓ)/Z + α/K
+η = 0.3/h   (labels overlap h−1)</div>
+        <div><span class="chip">✣ Herbster–Warmuth</span></div></div></div>
+      <div class="win" style="grid-column:span 3"><div class="title"><span>C ▸ DETECTORS</span><span class="x">⊠</span></div><div class="content">
+        <span class="badge">ARL≥A</span><br>block-mean scores → conformal p → SR.
+        <div class="formula">F: z'Σ⁻¹z            (no labels)
+R: −(y−f)·f / σyσf   (orthogonality)
+R_t = (1+R_{t−1})·b(p_t)
+b(p) = ∫₀¹ ε p^(ε−1) dε</div>
+        <div><span class="chip">✣ Vovk</span><span class="chip">✣ Shiryaev–Roberts</span></div></div></div>
+      <div class="win" style="grid-column:span 3"><div class="title"><span>D ▸ LOUD DEGRADATION</span><span class="x">⊠</span></div><div class="content">
+        <span class="badge">90%</span><br>online quantile of |y−ŷ| on matured labels; F alarm inflates q×1.5; R alarm boosts the step.
+        <div class="formula">q ← q + γ·s·(1{|r|>q} − α)
+call ⇔ |ŷ| > k*·q  (k* from calm)</div>
+        <div><span class="chip">✣ Gibbs–Candès</span><span class="chip">✣ conformal PID</span></div></div></div>
+      <div class="win" style="grid-column:span 12"><div class="title"><span>WHY MONITOR R TESTS ORTHOGONALITY, NOT |RESIDUAL|</span><span class="x">⊠</span></div><div class="content" style="font-size:14px">
+        A least-squares forecaster f that is still right satisfies E[(y − f)·f] = 0. When the book's meaning flips, errors line up against the forecast and the mean becomes −2E[s²]. The |residual| only grows by a factor of about 1+3R². On real LOBSTER data R² ≈ 1–2 %, so |residual| has almost no power. On injected real-data shifts the |residual| monitor (our Round-1 design) detected <b id="a4-rate">–</b> of breaks, while the orthogonality monitor detected <b id="r-rate">–</b>. We changed the design because the data said so.</div></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="bar">
+    <div class="ver"><div class="t">TRIPWIRE-LOB</div><div class="b">Version 1.0<br>Perceptron 2026 · IITB–Optiver AI Innovation Lab<br>Team TM-BBAC6C06A8C · built on a laptop CPU</div></div>
+    <div style="flex:1"></div>
+    <div class="life"><canvas id="life" width="96" height="64" style="width:96px;image-rendering:pixelated"></canvas>Game of Life</div>
+  </div>
+</footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const C = {ink:'#231c1f', pink:'#f2879f', teal:'#2f7f7a', red:'#c0263a', grey:'#9a9093', paper:'#f4f1f2', mid:'#7a6f73'};
+const N = 6000;            // events kept on screen
+let hist = [];             // [t, mid, yhat, q, call, lf, lr, af, ar]
+let last = null;
+let alarmUntil = 0;
+
+function post(body){ return fetch('/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json()).catch(()=>({})) }
+function shock(kind){ post({action:'shock',kind}); }
+function setSpeed(v){ $('speedv').textContent=v; post({action:'speed',value:+v}); }
+
+function setupCanvas(c){
+  const dpr = window.devicePixelRatio||1, w = c.clientWidth, h = +c.getAttribute('height');
+  if (c.width !== Math.round(w*dpr)) { c.width = Math.round(w*dpr); c.height = Math.round(h*dpr); c.style.height = h+'px'; }
+  const g = c.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,w,h);
+  return [g,w,h];
+}
+function scaler(lo,hi,a,b){ const d=(hi-lo)||1; return v => b - (v-lo)/d*(b-a); }
+function grid(g,w,h){ g.strokeStyle='#e6d5da'; g.lineWidth=1; for(let x=0;x<w;x+=40){g.beginPath();g.moveTo(x+.5,0);g.lineTo(x+.5,h);g.stroke();} }
+function line(g,xs,ys,color,lw){ g.strokeStyle=color; g.lineWidth=lw||1.2; g.beginPath(); let s=false; for(let i=0;i<xs.length;i++){ const y=ys[i]; if(y==null||!isFinite(y)){s=false;continue;} if(!s){g.moveTo(xs[i],y);s=true;} else g.lineTo(xs[i],y);} g.stroke(); }
+function label(g,txt,x,y,color){ g.fillStyle=color||C.ink; g.font='11px ui-monospace,monospace'; g.fillText(txt,x,y); }
+
+// ------------------------------------------------------------------ live drawing
+function drawLive(){
+  if (!hist.length) return;
+  const H = hist, n = H.length, t0 = H[0][0], t1 = H[n-1][0];
+  const xOf = (w) => (t) => 4 + (t - t0) / Math.max(t1 - t0, 1) * (w - 8);
+  const h = last ? last.h : 10;
+  // price
+  { const [g,w,hh] = setupCanvas($('c-price')); grid(g,w,hh);
+    const mids = H.map(r=>r[1]); const lo=Math.min(...mids), hi=Math.max(...mids); const sy=scaler(lo,hi,8,hh-8), sx=xOf(w);
+    alarmLines(g,H,sx,hh); line(g,H.map(r=>sx(r[0])),mids.map(sy),C.ink,1.3);
+    label(g, (last && last.source!=='synthetic' ? 'level (ticks, real events)' : 'mid (ticks)'), 6, 13); }
+  // forecast vs realised
+  { const [g,w,hh] = setupCanvas($('c-fc')); grid(g,w,hh); const sx=xOf(w);
+    const idx = new Map(H.map((r,i)=>[r[0],i]));
+    const real = H.map(r => { const j = idx.get(r[0]+h); return j===undefined? null : H[j][1]-r[1]; });
+    let m = 1; for (const r of H){ m=Math.max(m, Math.abs(r[2])+r[3]); } for (const v of real){ if(v!=null) m=Math.max(m,Math.abs(v)); } m=Math.min(m*1.05, 60);
+    const sy = scaler(-m,m,10,hh-18);
+    g.fillStyle='rgba(242,135,159,.45)'; g.beginPath();
+    H.forEach((r,i)=>{ const x=sx(r[0]), y=sy(r[2]+r[3]); i?g.lineTo(x,y):g.moveTo(x,y); });
+    for (let i=n-1;i>=0;i--){ const r=H[i]; g.lineTo(sx(r[0]), sy(r[2]-r[3])); } g.closePath(); g.fill();
+    g.fillStyle='rgba(122,111,115,.55)'; real.forEach((v,i)=>{ if(v!=null && i%2===0){ g.fillRect(sx(H[i][0])-1, sy(v)-1, 2, 2);} });
+    line(g,H.map(r=>sx(r[0])),H.map(r=>sy(r[2])),C.teal,1.4);
+    g.strokeStyle='#bbb'; g.beginPath(); g.moveTo(0,sy(0)); g.lineTo(w,sy(0)); g.stroke();
+    // calls strip
+    let k=0; for (const r of H){ if(r[4]!==0 && (k++%3===0)){ g.fillStyle = r[4]>0? C.teal : C.red; const x=sx(r[0]); g.beginPath(); if(r[4]>0){g.moveTo(x,hh-2);g.lineTo(x-3,hh-8);g.lineTo(x+3,hh-8);} else {g.moveTo(x,hh-8);g.lineTo(x-3,hh-2);g.lineTo(x+3,hh-2);} g.fill(); } }
+    alarmLines(g,H,sx,hh);
+    label(g,`h = ${h} events ahead · band ±q`,6,13); }
+  // detectors
+  { const [g,w,hh] = setupCanvas($('c-det')); grid(g,w,hh); const sx=xOf(w);
+    const thr = Math.max(last.thr_f,last.thr_r); const top = Math.max(thr*1.15, ...H.map(r=>Math.max(r[5],r[6]))); const sy=scaler(0,top,8,hh-6);
+    g.setLineDash([5,4]); g.strokeStyle=C.red; g.beginPath(); g.moveTo(0,sy(last.thr_f)); g.lineTo(w,sy(last.thr_f)); g.stroke();
+    if (Math.abs(last.thr_r-last.thr_f)>1e-6){ g.beginPath(); g.moveTo(0,sy(last.thr_r)); g.lineTo(w,sy(last.thr_r)); g.stroke(); }
+    g.setLineDash([]);
+    line(g,H.map(r=>sx(r[0])),H.map(r=>sy(r[5])),C.teal,1.5); line(g,H.map(r=>sx(r[0])),H.map(r=>sy(r[6])),C.ink,1.5);
+    alarmLines(g,H,sx,hh,true);
+    label(g,`threshold log10 A = ${last.thr_f.toFixed(2)}`, w-190, sy(last.thr_f)-4, C.red);
+    label(g,`F: ${last.mon_f_state}   R: ${last.mon_r_state}`, 6, 13); }
+}
+function alarmLines(g,H,sx,hh,labels){
+  for (const r of H){ if (r[7]||r[8]){ const x=sx(r[0]); g.strokeStyle = r[8]? C.red : C.teal; g.lineWidth=2; g.beginPath(); g.moveTo(x,0); g.lineTo(x,hh); g.stroke(); if(labels){ label(g, r[8]? 'R ALARM':'F ALARM', x+3, 24, r[8]?C.red:C.teal);} } }
+  g.lineWidth=1;
+}
+function drawPool(fr){
+  const [g,w,hh] = setupCanvas($('c-pool')); const K = fr.weights.length;
+  const names = ['ridge','.998','.9995','.99995','λ=1','head1','head2','head3','head4'];
+  const bw = (w-20)/K; const sy = scaler(0,1,14,hh-30);
+  for (let k=0;k<K;k++){
+    const x = 10 + k*bw, wt = fr.weights[k];
+    g.strokeStyle=C.ink; g.strokeRect(x+3, sy(1), bw-6, sy(0)-sy(1));
+    if (fr.active[k]){
+      if (fr.learning[k]){ g.fillStyle = k>=5? C.teal : C.ink; g.fillRect(x+3, sy(wt), bw-6, sy(0)-sy(wt)); }
+      else { g.fillStyle = k===0? '#9a9093' : '#5a4f53'; g.fillRect(x+3, sy(wt), bw-6, sy(0)-sy(wt));
+        g.strokeStyle='rgba(255,255,255,.5)'; for(let yy=sy(wt); yy<sy(0); yy+=5){ g.beginPath(); g.moveTo(x+3,yy); g.lineTo(x+bw-3,yy+5); g.stroke(); } }
+    }
+    label(g, names[k]||('e'+k), x+3, hh-16); label(g, (wt*100).toFixed(0)+'%', x+3, hh-3, C.ink);
+  }
+  label(g,`spawned heads: ${fr.spawns}`, 10, 11);
+}
+function drawBook(fr){
+  const [g,w,hh] = setupCanvas($('c-book'));
+  if (!fr.book){ label(g,'real replay: features are',8,20); label(g,'precomputed from LOBSTER;',8,34); label(g,'book ladder shown for',8,48); label(g,'synthetic source only',8,62); return; }
+  const b = fr.book, rows = 10, rh = (hh-10)/(2*rows); const mx = Math.max(...b.bid_s, ...b.ask_s);
+  for (let l=0;l<rows;l++){
+    const ya = 5 + (rows-1-l)*rh, yb = 5 + (rows+l)*rh;
+    g.fillStyle = 'rgba(192,38,58,.75)'; g.fillRect(w/2, ya+1, (w/2-6)*b.ask_s[l]/mx, rh-2);
+    g.fillStyle = 'rgba(47,127,122,.8)'; g.fillRect(w/2, yb+1, (w/2-6)*b.bid_s[l]/mx, rh-2);
+    label(g, b.ask_p[l].toFixed(2), 4, ya+rh-2, C.red); label(g, b.bid_p[l].toFixed(2), 4, yb+rh-2, C.teal);
+  }
+}
+function telemetry(fr){
+  const pct = v => v==null? '–' : (100*v).toFixed(1)+' %';
+  const ratio = (fr.mse_tw && fr.mse_b1) ? (fr.mse_b1/fr.mse_tw) : null;
+  $('telemetry').innerHTML = `
+    <div class="row"><span>${new Date().toDateString()}</span><b>${fr.phase}</b></div>
+    <div class="big-num">${fr.t.toLocaleString()}</div><div style="font-size:11px">events processed</div>
+    <div class="row"><span>latency p50 / p99</span><b>${fr.lat_p50??'–'} / ${fr.lat_p99??'–'} µs</b></div>
+    <div class="row"><span>coverage (target 90 %)</span><b>${pct(fr.coverage)}</b></div>
+    <div class="row"><span>call rate</span><b>${pct(fr.call_rate)}</b></div>
+    <div class="row"><span>hit rate on calls</span><b>${pct(fr.hit_rate)}</b></div>
+    <div class="row"><span>frozen-model error ÷ ours</span><b>${ratio? ratio.toFixed(2)+'×':'–'}</b></div>
+    <div class="row"><span>alarms F / R</span><b>${fr.n_alarms_f} / ${fr.n_alarms_r}</b></div>
+    <div class="row"><span>horizon h</span><b>${fr.h} events</b></div>`;
+}
+function logbox(fr){
+  $('log').innerHTML = fr.log.slice().reverse().map(e => {
+    const cls = e.msg.includes('MONITOR R')? 'a' : e.msg.includes('MONITOR F')? 'f' : e.msg.includes('SHOCK')? 's' : '';
+    return `<div class="${cls}">[${e.wall}] ${e.msg}</div>`; }).join('');
+}
+function status(fr){
+  const recent = hist.slice(-Math.min(hist.length, 600)).some(r => r[7]||r[8]);
+  $('status-pill').classList.toggle('alarm', recent);
+  $('status-text').textContent = recent ? 'ALARM — degrading loudly' : (fr.live ? 'LIVE · watching' : fr.phase);
+  $('regime').textContent = fr.regime;
+  $('clockline').textContent = fr.clock ? `LOBSTER ${fr.source} · ${secToClock(fr.clock)}` : `${fr.source} · seed stream`;
+  if (recent && Date.now() > alarmUntil){ ['w-det','w-forecast','w-pool'].forEach(id=>{ const el=$(id); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }); alarmUntil = Date.now()+1500; }
+}
+function secToClock(s){ const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), ss=Math.floor(s%60); return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`; }
+
+function connect(){
+  const es = new EventSource('/stream');
+  es.onmessage = (ev) => {
+    const fr = JSON.parse(ev.data);
+    if (last && (fr.t < last.t || fr.source !== last.source)) hist = [];
+    last = fr;
+    for (const p of fr.pts) hist.push(p);
+    if (hist.length > N) hist = hist.slice(hist.length - N);
+    drawLive(); drawPool(fr); drawBook(fr); telemetry(fr); logbox(fr); status(fr);
+    $('speed').value = fr.speed; $('speedv').textContent = Math.round(fr.speed);
+  };
+  es.onerror = () => { $('status-text').textContent = 'engine offline — run python scripts/cockpit.py'; };
+}
+fetch('/sources').then(r=>r.json()).then(list => {
+  $('sources').innerHTML = list.map(s => `<button data-s="${s}" onclick="post({action:'source',value:'${s}'}).then(()=>{hist=[]; markSource('${s}')})">${s==='synthetic'?'SYNTHETIC':s+' (real)'}</button>`).join('');
+  markSource('synthetic');
+}).catch(()=>{});
+function markSource(s){ document.querySelectorAll('#sources button').forEach(b=>b.classList.toggle('on', b.dataset.s===s)); }
+
+// ------------------------------------------------------------------ evidence replays
+let replays = {};
+function drawSeries(cid, rp, series, opts){
+  const [g,w,hh] = setupCanvas($(cid)); grid(g,w,hh);
+  const n = rp.y.length, sx = i => 4 + i/(n-1)*(w-8);
+  let vals = []; series.forEach(s => s.v && s.v.forEach(v => { if (v!=null && isFinite(v)) vals.push(v); }));
+  if (!vals.length) return;
+  vals.sort((a,b)=>a-b);
+  let lo = opts.lo ?? vals[Math.floor(vals.length*0.005)], hi = opts.hi ?? vals[Math.floor(vals.length*0.995)];
+  const sy = scaler(lo,hi,8,hh-8);
+  const toIdx = t => (t/rp.step);
+  if (rp.t_live){ g.fillStyle='rgba(154,144,147,.18)'; g.fillRect(0,0,sx(toIdx(rp.t_live)),hh); label(g,'warm-up',6,hh-6,C.grey); }
+  (rp.change_points||[]).forEach(c => { const x=sx(toIdx(c)); g.strokeStyle=C.red; g.lineWidth=2; g.beginPath(); g.moveTo(x,0); g.lineTo(x,hh); g.stroke(); g.lineWidth=1; });
+  series.forEach(s => { if (s.v) line(g, s.v.map((_,i)=>sx(i)), s.v.map(v => v==null? null : sy(Math.max(lo,Math.min(hi,v)))), s.c, s.lw||1.2); });
+  if (opts.alarms){ opts.alarms.forEach(([list,col,yy]) => list.forEach(a => { const x=sx(toIdx(a)); g.fillStyle=col; g.beginPath(); g.moveTo(x,yy); g.lineTo(x-4,yy-7); g.lineTo(x+4,yy-7); g.fill(); })); }
+  if (opts.hline!=null){ g.setLineDash([5,4]); g.strokeStyle=C.red; g.beginPath(); g.moveTo(0,sy(opts.hline)); g.lineTo(w,sy(opts.hline)); g.stroke(); g.setLineDash([]); }
+  if (opts.title){ g.fillStyle='rgba(244,241,242,.85)'; g.fillRect(4,hh-20,g.measureText(opts.title).width+14,16); label(g, opts.title, 8, hh-8); }
+}
+function drawStack(cid, rp){
+  const [g,w,hh] = setupCanvas($(cid)); const W = rp.weights, n = W.length, K = W[0].length;
+  const cols = ['#bbb','#f3c3cf','#e8a0b4','#d46a8a','#8c2f4f','#231c1f','#2f7f7a','#7aa6a3','#555'];
+  const sx = i => i/(n-1)*w; let base = new Array(n).fill(0);
+  for (let k=0;k<K;k++){ g.fillStyle = cols[k%cols.length]; g.beginPath();
+    for (let i=0;i<n;i++){ const y = hh - (base[i]+W[i][k])*hh; i? g.lineTo(sx(i),y) : g.moveTo(sx(i),y); }
+    for (let i=n-1;i>=0;i--){ g.lineTo(sx(i), hh - base[i]*hh); } g.closePath(); g.fill();
+    for (let i=0;i<n;i++) base[i]+=W[i][k]; }
+  (rp.change_points||[]).forEach(c => { const x=sx(c/rp.step); g.strokeStyle=C.red; g.lineWidth=2; g.beginPath(); g.moveTo(x,0); g.lineTo(x,hh); g.stroke(); g.lineWidth=1; });
+  label(g,'ridge · RLS .998 .9995 .99995 1 · heads 1–4 (dark/teal)',8,14,'#fff');
+}
+function showReplay(key){
+  const rp = replays[key]; if (!rp) return; $('replay-title').textContent = rp.title;
+  drawSeries('r-mse', rp, [{v:rp.mse_b1,c:C.grey},{v:rp.mse_b4,c:C.teal},{v:rp.mse_tw,c:C.ink,lw:1.8}], {lo:0, title:'rolling MSE (ticks²)'});
+  const thr = Math.log10(1 + (key==='recurrence'? 1000 : 1200));
+  drawSeries('r-det', rp, [{v:rp.logR_f,c:C.teal},{v:rp.logR_r,c:C.ink}], {lo:0, hi:Math.max(thr*1.2, 1), hline:thr, alarms:[[rp.b3_alarms||[],C.red,10]], title:'log10(1+R): F teal, R ink'});
+  drawStack('r-w', rp);
+  drawSeries('r-cov', rp, [{v:rp.coverage,c:C.teal,lw:1.6},{v:rp.call_rate,c:C.ink}], {lo:0, hi:1, hline:0.9, title:'coverage (teal) · call rate (ink)'});
+}
+fetch('/replays.json').then(r=>r.json()).then(js => {
+  replays = js; const keys = Object.keys(js);
+  $('replay-sel').innerHTML = keys.map(k => `<option value="${k}">${k}</option>`).join('');
+  $('replay-sel').onchange = e => showReplay(e.target.value);
+  if (keys.length) showReplay(keys[0]);
+}).catch(()=>{});
+fetch('/summary.json').then(r=>r.json()).then(S => {
+  if (S.stats) $('stats').innerHTML = S.stats.map(s => `<div class="stat"><div class="v">${s.v}</div><div class="k">${s.k}</div></div>`).join('');
+  if (S.headline) $('headline').innerHTML = S.headline;
+  if (S.ks_fa!=null) $('ks-fa').textContent = S.ks_fa;
+  if (S.a4_rate!=null) $('a4-rate').textContent = S.a4_rate;
+  if (S.r_rate!=null) $('r-rate').textContent = S.r_rate;
+  if (S.tables) $('tables').innerHTML = S.tables;
+}).catch(()=>{});
+
+// ------------------------------------------------------------------ decoration
+const enc = btoa('TRIPWIRE-LOB: alarm when R_t >= A; E[tau] >= A under the null. Perceptron 2026, IIT Bombay x Optiver. Degrade loudly, never silently. ');
+$('b64').textContent = (enc+enc).slice(0, 360); $('vcode').textContent = enc.slice(0, 120);
+(function life(){
+  const c = $('life'), g = c.getContext('2d'), W = 24, H = 16; let s = Array.from({length:H},()=>Array.from({length:W},()=>Math.random()<.3));
+  function step(){ const n = s.map((row,y)=>row.map((v,x)=>{ let k=0; for(let dy=-1;dy<=1;dy++)for(let dx=-1;dx<=1;dx++){ if(dx||dy){ k+= s[(y+dy+H)%H][(x+dx+W)%W]?1:0; } } return v? (k===2||k===3) : k===3; }));
+    if (n.flat().filter(Boolean).length < 8) s = s.map(r=>r.map(()=>Math.random()<.3)); else s = n;
+    g.fillStyle='#f2879f'; g.fillRect(0,0,96,64); g.fillStyle='#231c1f'; s.forEach((row,y)=>row.forEach((v,x)=>{ if(v){ g.beginPath(); g.arc(x*4+2,y*4+2,1.7,0,6.3); g.fill(); } })); }
+  setInterval(step, 300); step();
+})();
+window.addEventListener('resize', () => { drawLive(); const k=$('replay-sel').value; if(k) showReplay(k); });
+connect();
+</script>
+</body>
+</html>
