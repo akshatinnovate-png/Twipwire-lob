@@ -51,7 +51,7 @@ class TripwireEngine:
                                c.fs_eta, c.fs_alpha, c.loss_clip)
         A_f, A_r = c.thresholds()
         sf, sr = c.strides()
-        self.mon_f = ConformalSR(A_f, c.ref_size, c.ref_gap, c.min_ref, sf, seed=c.seed + 11, enabled=c.enable_f, min_ref_rearm=c.min_ref_rearm)
+        self.mon_f = ConformalSR(A_f, c.f_ref_size, c.f_ref_gap, c.f_min_ref, sf, seed=c.seed + 11, enabled=c.enable_f, min_ref_rearm=c.f_min_ref_rearm)
         self.mon_r = ConformalSR(A_r, c.ref_size, c.ref_gap, c.min_ref, sr, seed=c.seed + 23, enabled=c.enable_r, min_ref_rearm=c.min_ref_rearm)
         self.recent_X = deque(maxlen=c.spawn_window)
         self.recent_y = deque(maxlen=c.spawn_window)

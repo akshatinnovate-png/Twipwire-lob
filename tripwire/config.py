@@ -36,8 +36,12 @@ class TripwireConfig:
     ref_gap: int = 200                      # newest scores wait this many tests before entering the reference
     min_ref: int = 120                      # block-scores needed before arming
     min_ref_rearm: int = 60                 # ... and before re-arming after an alarm
-    stride_f: int = 50                      # block length for Monitor F (feature autocorrelation)
-    stride_r: int = 50                      # block length for Monitor R (>= horizon: labels overlap by h-1 events)
+    stride_f: int = 200                     # block length for Monitor F (features carry slow components on real books)
+    stride_r: int = 0                       # block length for Monitor R; 0 -> max(50, 2h) (labels overlap by h-1 events)
+    f_ref_size: int = 150                   # Monitor F reference / gap / arming sizes, in F-blocks
+    f_ref_gap: int = 50
+    f_min_ref: int = 40
+    f_min_ref_rearm: int = 20
     monitor_r_score: str = "orthogonality"  # "orthogonality": -(y-yhat)*yhat ; "abs": |y-yhat| (abstract v1)
     monitor_r_ref: str = "slow"             # forecast tested by Monitor R: "slow" = longest-memory RLS expert, "pool" = aggregate
     enable_f: bool = True
@@ -63,7 +67,7 @@ class TripwireConfig:
 
     def strides(self):
         sf = self.stride_f or self.horizon
-        sr = self.stride_r or self.horizon
+        sr = self.stride_r or max(50, 2 * self.horizon)
         return sf, sr
 
     def thresholds(self):
