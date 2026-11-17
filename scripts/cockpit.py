@@ -294,8 +294,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.wfile.write(b"data: " + json.dumps(fr).encode() + b"\n\n")
                     self.wfile.flush()
                 time.sleep(0.05)
-        except (BrokenPipeError, ConnectionResetError):
-            return
+        except (BrokenPipeError, ConnectionResetError, ConnectionAbortedError, OSError):
+            return  # browser closed or refreshed the page: normal
 
     def do_POST(self):
         n = int(self.headers.get("Content-Length", 0) or 0)

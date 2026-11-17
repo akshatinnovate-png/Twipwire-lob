@@ -44,7 +44,7 @@ p99 = float(np.percentile(o["latency_us"], 99))
 check(f"p99 latency {p99:.0f} us < 1000 us", p99 < 1000, "close other programs / plug in the laptop")
 for s in ("AAPL", "AMZN", "MSFT"):
     check(f"real-data cache for {s}", os.path.exists(os.path.join(ROOT, "data", "cache", f"{s}_feat_h50.npz")),
-          "python scripts/fetch_lobster.py && python scripts/run_benchmarks.py")
+          "python scripts/fetch_lobster.py  then  python scripts/build_cache.py")
 for f in ("cockpit/index.html", "cockpit/replays.json", "cockpit/summary.json", "results/tables.md",
           "results/figures/recurrence.png"):
     check(f"{f} present", os.path.exists(os.path.join(ROOT, f)), "python scripts/run_benchmarks.py")
