@@ -233,11 +233,13 @@ def inject_task(args):
     return r
 
 
-def splice_task(_):
+def splice_task(args):
+    """Natural regime change: the end of one real stock's stream is spliced onto another's."""
+    symA, symB, a0, b0 = args if args else ("AAPL", "MSFT", 100_000, 100_000)
     h = REAL_CFG.horizon
-    XA, mA, sA = real_features("AAPL", h)
-    XB, mB, sB = real_features("MSFT", h)
-    a0, b0, n = 100_000, 100_000, 60_000
+    XA, mA, sA = real_features(symA, h)
+    XB, mB, sB = real_features(symB, h)
+    n = 60_000
     yA = labels_from_level(mA[a0:a0 + n], h)[: n - h]
     yB = labels_from_level(mB[b0:b0 + n], h)[: n - h]
     y = np.r_[yA, yB, np.zeros(h)]
@@ -245,10 +247,15 @@ def splice_task(_):
     spr = np.r_[sA[a0:a0 + n - h], sB[b0:b0 + n - h], sB[b0 + n - h: b0 + n]]
     lv = level_from_labels(y, h)
     X[h:, 15] = lv[h:] - lv[:-h]
-    r = evaluate_stream(X, lv, spr, REAL_CFG, [n - h], ablations={}, keep_series=True,
+    r = evaluate_stream(X, lv, spr, REAL_CFG, [n - h], ablations={}, keep_series=args is None,
                         b4_lambdas=(0.998, 0.9995, 0.9999, 0.99995, 1.0))
-    r["case"] = "AAPL -> MSFT splice"
+    r["case"] = f"{symA} -> {symB}"
+    r.update(symA=symA, symB=symB, a0=a0, b0=b0)
     return r
+
+
+SPLICES = [(a, b, off, off) for a, b in (("AAPL", "MSFT"), ("MSFT", "AAPL"), ("AMZN", "AAPL"))
+           for off in (40_000, 120_000, 200_000)]
 
 
 # ----------------------------------------------------------------------------- aggregation
@@ -369,9 +376,10 @@ def main():
             inj = pool.map(inject_task, ij, chunksize=1)
             results["real_injected"] = inj
             print("  done %.0fs" % (time.time() - t0), flush=True)
-            print("[6/6] cross-ticker splice", flush=True)
+            print("[6/6] cross-ticker splices", flush=True)
             spl = splice_task(None)
             results["real_splice"] = strip(spl)
+            results["real_splices"] = [strip(r) for r in pool.map(splice_task, SPLICES, chunksize=1)]
         else:
             fr, spl = [], None
     results["recurrence"] = strip(rec)
@@ -400,12 +408,12 @@ def export_replays(rec, fr, spl):
     """Down-sampled series for the cockpit's 'evidence' replays."""
     from report import replay_payload
     out = {"recurrence": replay_payload(rec["series"], "Synthetic recurrence: calm -> concept -> covariate -> concept -> calm",
-                                        change_points=rec["change_points"], t_live=rec["t_live"])}
+                                        change_points=rec["change_points"], t_live=rec["t_live"], thresholds=SYN_CFG.thresholds())}
     for r in fr or []:
         if "series" in r:
-            out[f"{r['symbol']}_h{r['h']}"] = replay_payload(r["series"], f"LOBSTER {r['symbol']} 21-Jun-2012, h={r['h']} events (real data, walk-forward)", t_live=r["t_live"])
+            out[f"{r['symbol']}_h{r['h']}"] = replay_payload(r["series"], f"LOBSTER {r['symbol']} 21-Jun-2012, h={r['h']} events (real data, walk-forward)", t_live=r["t_live"], thresholds=replace(REAL_CFG, horizon=r["h"]).thresholds())
     if spl is not None and "series" in spl:
-        out["splice"] = replay_payload(spl["series"], "Real AAPL then MSFT spliced at a known point (natural regime change)", change_points=[x["tau"] for x in spl["models"]["TRIPWIRE-LOB"]["changes"]], t_live=spl["t_live"])
+        out["splice"] = replay_payload(spl["series"], "Real AAPL then MSFT spliced at a known point (natural regime change)", change_points=[x["tau"] for x in spl["models"]["TRIPWIRE-LOB"]["changes"]], t_live=spl["t_live"], thresholds=REAL_CFG.thresholds())
     with open(os.path.join(ROOT, "cockpit", "replays.json"), "w") as f:
         json.dump(out, f, default=_json_default)
 

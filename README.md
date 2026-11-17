@@ -77,7 +77,47 @@ The minute-by-minute finals script is in `docs/DEMO_SCRIPT.md`. Run `scripts/pre
 
 All tables are in [`results/tables.md`](results/tables.md) and figures in `results/figures/`. The raw output is `results/benchmarks.json`.
 
-RESULTS_PLACEHOLDER
+### Commitments from the Round-1 abstract
+
+| Committed target | Result | Met |
+|---|---|---|
+| False alarms within 2× nominal | Real data, block-shuffled null (observed / nominal, F; R): AAPL 1.01; 0.17 · AMZN 1.02; 0.38 · MSFT 1.56; 1.14. Synthetic calm: 0.16; 0.18 | yes |
+| Lower cost of delay than B3 and B4 on concept-shift cells | Concept 2827 ± 218 vs B3 3941 ± 570, B4 3028 ± 337 · coupled 4185 ± 335 vs 7755 ± 1080, 5083 ± 481 | yes (vs B4 on the concept cell the CIs overlap) |
+| Coverage within 5 points of 90 % | 89.7–90.0 % on every real stream; 89.8–90.0 % on every synthetic cell | yes |
+| MVP 1: predict short-term price direction or spread | AAPL / AMZN / MSFT, h = 10 and 50, mid and spread targets (table below) | yes |
+| MVP 2: detect a shift with a statistical test and show the model reacting | Two sequential tests; live cockpit; replays | yes |
+| Stretch: multiple regime-adaptive heads | Spawned heads are kept frozen; in the recurrence run the frozen head and the frozen ridge win weight back when their regimes return (`results/figures/recurrence.png`) | yes |
+| Stretch: latency under a budget | p50 ≈ 80 µs, p99 ≤ 226 µs per event on one core (budget 1 ms) | yes |
+
+### Synthetic 2×2 benchmark (20 seeds, h = 10, change at event 20 000)
+
+| Cell | Cost of delay @3000, TRIPWIRE | B3 rolling-KS | B4 best λ (hindsight) | B1 frozen | Monitor R fired / delay | Monitor F fired / delay |
+|---|---|---|---|---|---|---|
+| covariate (P(X) only) | 596 ± 105 | 3683 ± 492 | 567 ± 109 | 3881 | 5 % / – | 100 % / 629 |
+| concept (P(Y\|X) only) | **2827 ± 218** | 3941 ± 570 | 3028 ± 337 | 9339 | 100 % / 727 | 20 % / – |
+| coupled (both) | **4185 ± 335** | 7755 ± 1080 | 5083 ± 481 | 31 712 | 100 % / 259 | 100 % / 629 |
+
+* **Shift-type selectivity.** Monitor R stays quiet on harmless covariate shifts (5 %) and fires on every concept shift. Monitor F fires on every P(X) shift.
+* **Calm data.** False alarms per 50k events: Monitor F 0.40, Monitor R 0.16, rolling KS 17.8.
+* **Silent-failure time after a concept flip.** 134 events for TRIPWIRE, 679 for B3, and about 14 000 for models that never alarm.
+* **Ablations.** Removing Monitor R raises concept cost of delay from 2827 to 3210. With the abstract's \|residual\| score, Monitor R fires on only 15 % of concept flips (orthogonality: 100 %).
+
+### Real LOBSTER data (21 June 2012, full day, walk-forward, labels delayed h events)
+
+| | AAPL h=50 | AMZN h=50 | MSFT h=50 |
+|---|---|---|---|
+| R² out-of-sample: TRIPWIRE / B4 (hindsight λ) / B1 frozen | 0.031 / 0.032 / −0.116 | 0.064 / 0.062 / −0.177 | 0.239 / 0.239 / 0.157 |
+| 90 % interval coverage: TRIPWIRE / static interval | 89.8 / 99.3 | 89.8 / 99.3 | 89.9 / 99.8 |
+| Hit rate on calls (moves ≠ 0): TRIPWIRE / B1 | 68.2 / 63.1 | 74.8 / 66.1 | 95.1 / 98.9 |
+
+*Injected concept break on real data* (12 runs per β; the slice's real signal is reversed after τ, P(X) untouched):
+
+| β | Monitor R caught | \|residual\| monitor caught | CoD@3000: TRIPWIRE / B3 / B4 | Placebo (β = 1) |
+|---|---|---|---|---|
+| −3 | 83 % (median 849 events) | 17 % | **13 065** / 21 263 / 18 573 | 0 R alarms in 12 runs |
+| −1 | 75 % (median 1349 events) | 17 % | **4 800** / 15 186 / 4 859 | |
+
+*Natural shifts* (one stock's book spliced onto another's, 3 pairs × 3 offsets): alarms in 5/9 splices; post-change coverage 86.8 % vs 55–58 % for the baselines. Cost of delay 3090 vs B3 42 360, but B4 (2409) is lower here. In all 4 misses Monitor F had alarmed on the first stock 500–9 100 events before the splice, and 3 of them were still inside its re-arm window.
 
 ## Repository map
 
