@@ -176,7 +176,7 @@ footer .life{background:var(--pink);border-left:1px solid var(--ink);padding:6px
         <div class="title"><span>SEQUENTIAL DETECTORS ▸ Shiryaev–Roberts log10(1+R)</span><span class="x">⊠</span></div>
         <div class="content">
           <div class="inner"><canvas id="c-det" height="170"></canvas></div>
-          <div class="legend"><span><i style="background:#2f7f7a"></i>Monitor F (label-free, sees features now)</span><span><i style="background:#231c1f"></i>Monitor R (label-aware, sees matured errors)</span><span><i style="background:#c0263a"></i>threshold A ⇒ ≤ 1 false alarm per ARL</span></div>
+          <div class="legend"><span><i style="background:#2f7f7a"></i>Monitor F (label-free, sees features now)</span><span><i style="background:#231c1f"></i>Monitor R (label-aware, sees matured errors)</span><span>- - dashed: each monitor's threshold A ⇒ average run length ≥ A blocks before a false alarm</span></div>
         </div>
       </div>
       <!-- telemetry -->
@@ -292,7 +292,7 @@ function shock(kind){ post({action:'shock',kind}); }
 function setSpeed(v){ $('speedv').textContent=v; post({action:'speed',value:+v}); }
 
 function setupCanvas(c){
-  const dpr = window.devicePixelRatio||1, w = c.clientWidth, h = +c.getAttribute('height');
+  const dpr = window.devicePixelRatio||1, w = c.clientWidth; if (!c.dataset.h) c.dataset.h = c.getAttribute('height'); const h = +c.dataset.h;  // logical height; c.height is device pixels
   if (c.width !== Math.round(w*dpr)) { c.width = Math.round(w*dpr); c.height = Math.round(h*dpr); c.style.height = h+'px'; }
   const g = c.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,w,h);
   return [g,w,h];
@@ -332,12 +332,14 @@ function drawLive(){
   // detectors
   { const [g,w,hh] = setupCanvas($('c-det')); grid(g,w,hh); const sx=xOf(w);
     const thr = Math.max(last.thr_f,last.thr_r); const top = Math.max(thr*1.15, ...H.map(r=>Math.max(r[5],r[6]))); const sy=scaler(0,top,8,hh-6);
-    g.setLineDash([5,4]); g.strokeStyle=C.red; g.beginPath(); g.moveTo(0,sy(last.thr_f)); g.lineTo(w,sy(last.thr_f)); g.stroke();
-    if (Math.abs(last.thr_r-last.thr_f)>1e-6){ g.beginPath(); g.moveTo(0,sy(last.thr_r)); g.lineTo(w,sy(last.thr_r)); g.stroke(); }
-    g.setLineDash([]);
+    g.setLineDash([5,4]); g.lineWidth=1.5;
+    g.strokeStyle=C.teal; g.beginPath(); g.moveTo(0,sy(last.thr_f)); g.lineTo(w,sy(last.thr_f)); g.stroke();
+    g.strokeStyle=C.ink; g.beginPath(); g.moveTo(0,sy(last.thr_r)); g.lineTo(w,sy(last.thr_r)); g.stroke();
+    g.setLineDash([]); g.lineWidth=1;
     line(g,H.map(r=>sx(r[0])),H.map(r=>sy(r[5])),C.teal,1.5); line(g,H.map(r=>sx(r[0])),H.map(r=>sy(r[6])),C.ink,1.5);
     alarmLines(g,H,sx,hh,true);
-    label(g,`threshold log10 A = ${last.thr_f.toFixed(2)}`, w-190, sy(last.thr_f)-4, C.red);
+    label(g,`F threshold (A=${Math.round(10**last.thr_f-1)})`, w-170, sy(last.thr_f)-4, C.teal);
+    label(g,`R threshold (A=${Math.round(10**last.thr_r-1)})`, w-170, sy(last.thr_r)-4, C.ink);
     label(g,`F: ${last.mon_f_state}   R: ${last.mon_r_state}`, 6, 13); }
 }
 function alarmLines(g,H,sx,hh,labels){
@@ -435,6 +437,7 @@ function drawSeries(cid, rp, series, opts){
   series.forEach(s => { if (s.v) line(g, s.v.map((_,i)=>sx(i)), s.v.map(v => v==null? null : sy(Math.max(lo,Math.min(hi,v)))), s.c, s.lw||1.2); });
   if (opts.alarms){ opts.alarms.forEach(([list,col,yy]) => list.forEach(a => { const x=sx(toIdx(a)); g.fillStyle=col; g.beginPath(); g.moveTo(x,yy); g.lineTo(x-4,yy-7); g.lineTo(x+4,yy-7); g.fill(); })); }
   if (opts.hline!=null){ g.setLineDash([5,4]); g.strokeStyle=C.red; g.beginPath(); g.moveTo(0,sy(opts.hline)); g.lineTo(w,sy(opts.hline)); g.stroke(); g.setLineDash([]); }
+  (opts.hlines||[]).forEach(([v,col]) => { g.setLineDash([5,4]); g.strokeStyle=col; g.lineWidth=1.5; g.beginPath(); g.moveTo(0,sy(v)); g.lineTo(w,sy(v)); g.stroke(); g.setLineDash([]); g.lineWidth=1; });
   if (opts.title){ g.fillStyle='rgba(244,241,242,.85)'; g.fillRect(4,hh-20,g.measureText(opts.title).width+14,16); label(g, opts.title, 8, hh-8); }
 }
 function drawStack(cid, rp){
@@ -451,8 +454,8 @@ function drawStack(cid, rp){
 function showReplay(key){
   const rp = replays[key]; if (!rp) return; $('replay-title').textContent = rp.title;
   drawSeries('r-mse', rp, [{v:rp.mse_b1,c:C.grey},{v:rp.mse_b4,c:C.teal},{v:rp.mse_tw,c:C.ink,lw:1.8}], {lo:0, title:'rolling MSE (ticks²)'});
-  const thr = Math.log10(1 + (key==='recurrence'? 1000 : 1200));
-  drawSeries('r-det', rp, [{v:rp.logR_f,c:C.teal},{v:rp.logR_r,c:C.ink}], {lo:0, hi:Math.max(thr*1.2, 1), hline:thr, alarms:[[rp.b3_alarms||[],C.red,10]], title:'log10(1+R): F teal, R ink'});
+  const tf = rp.thr_f || 2.4, tr = rp.thr_r || 3.0;
+  drawSeries('r-det', rp, [{v:rp.logR_f,c:C.teal},{v:rp.logR_r,c:C.ink}], {lo:0, hi:Math.max(tf, tr)*1.2, hlines:[[tf,C.teal],[tr,C.ink]], alarms:[[rp.b3_alarms||[],C.red,10]], title:'log10(1+R): F teal, R ink; dashed = each threshold'});
   drawStack('r-w', rp);
   drawSeries('r-cov', rp, [{v:rp.coverage,c:C.teal,lw:1.6},{v:rp.call_rate,c:C.ink}], {lo:0, hi:1, hline:0.9, title:'coverage (teal) · call rate (ink)'});
 }

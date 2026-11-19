@@ -125,20 +125,36 @@ def write_tables(R, path):
                      f"{np.mean([c['cod_3000'] for c in tw]):.0f} | {np.mean([c['cod_3000'] for c in b3]):.0f} | {np.mean([c['cod_3000'] for c in b4]):.0f} | "
                      f"{np.mean([c['post']['wrong_calls'] for c in tw]):.0f} | {np.mean([c['post']['wrong_calls'] for c in b1]):.0f} |")
         L.append("")
-    spl = R.get("real_splice")
-    if spl:
-        tw = spl["models"]["TRIPWIRE-LOB"]
-        c = tw["changes"][0] if tw["changes"] else {}
-        L += ["## Real natural shift: AAPL spliced into MSFT at a known point", "",
-              f"Monitor F delay: {c.get('delay_f')} events; Monitor R delay: {c.get('delay_r')} events; "
-              f"B3 rolling-KS delay: {spl['models']['B3 rolling-KS + retrain']['changes'][0]['delay_any'] if spl['models']['B3 rolling-KS + retrain']['changes'] else None} events.", "",
-              "| model | post-change R² | CoD@3000 | post coverage % | wrong calls |", "|---|---|---|---|---|"]
-        for m in _models(spl["models"]):
-            cc = spl["models"][m]["changes"]
-            if cc:
-                p = cc[0]["post"]
-                L.append(f"| {m} | {p['r2_oos']:.4f} | {cc[0]['cod_3000']:.0f} | {f(p.get('coverage'),pct=True)} | {p.get('wrong_calls','–')} |")
-        L.append("")
+    sps = R.get("real_splices", [])
+    if sps:
+        L += ["## Real natural shifts: one stock's book spliced onto another's (3 pairs x 3 offsets)", "",
+              "The splice point is known; features were standardised on the first stock. h = 50.", "",
+              "| model | detected % (any alarm ≤ 10k events) | median delay | mean CoD@3000 | mean post-change coverage % |",
+              "|---|---|---|---|---|"]
+        for m in _models(sps[0]["models"]):
+            ch = [r["models"][m]["changes"][0] for r in sps if r["models"][m]["changes"]]
+            if not ch:
+                continue
+            d = [c["delay_any"] for c in ch if c["delay_any"] is not None]
+            cov = [c["post"].get("coverage") for c in ch]
+            L.append(f"| {m} | {100*len(d)/len(ch):.0f} | {np.median(d) if d else float('nan'):.0f} | "
+                     f"{np.mean([c['cod_3000'] for c in ch]):.0f} | {100*np.mean(cov):.1f} |")
+        tw = [r["models"]["TRIPWIRE-LOB"]["changes"][0] for r in sps if r["models"]["TRIPWIRE-LOB"]["changes"]]
+        fdet = [c["delay_f"] for c in tw if c.get("delay_f") is not None]
+        miss_gaps = []
+        for r in sps:
+            c = r["models"]["TRIPWIRE-LOB"]["changes"][0]
+            if c["delay_any"] is None:
+                tau = c["tau"]
+                prior = [a for a in r["models"]["TRIPWIRE-LOB"]["alarms_f"] if a < tau]
+                miss_gaps.append(tau - prior[-1] if prior else None)
+        rearm = R["config_real"]["f_min_ref_rearm"] * R["config_real"]["stride_f"]
+        g = [x for x in miss_gaps if x is not None]
+        L += ["", f"Monitor F alone fired in {len(fdet)}/{len(tw)} splices (median delay {np.median(fdet) if fdet else float('nan'):.0f} events). "
+              f"In {len(g)} of the {len(miss_gaps)} missed splices Monitor F had already alarmed on the first stock "
+              f"{min(g) if g else 0:,}–{max(g) if g else 0:,} events before the splice; "
+              f"{sum(x <= rearm for x in g)} of those were inside its {rearm:,}-event re-arm window. "
+              "The pool still adapts without an alarm: compare cost of delay with B3.", ""]
     with open(path, "w") as fh:
         fh.write("\n".join(L))
 
@@ -183,10 +199,12 @@ def make_figures(R, rec, fr, spl, outdir):
         ax[0].plot(t, se_or, color=PINK, lw=1, ls="--", label="in-hindsight regime oracle")
         ax[0].set_title("rolling squared error (1000 events)")
         ax[0].legend(loc="upper right", fontsize=7, ncol=2)
-        A = math.log10(R["config_synthetic"]["arl_events"] / R["config_synthetic"]["stride_f"])
+        from tripwire import TripwireConfig
+        A_f, A_r = TripwireConfig(**{k: v for k, v in R["config_synthetic"].items() if k in TripwireConfig.__dataclass_fields__}).thresholds()
         ax[1].plot(t, s["logR_f"], color=ACCENT, lw=1, label="Monitor F (label-free)")
         ax[1].plot(t, s["logR_r"], color=INK, lw=1, label="Monitor R (label-aware)")
-        ax[1].axhline(A, color="#c0392b", ls=":", lw=1, label="threshold log10 A")
+        ax[1].axhline(math.log10(1 + A_f), color=ACCENT, ls=":", lw=1.2, label=f"F threshold (A={A_f:.0f})")
+        ax[1].axhline(math.log10(1 + A_r), color=INK, ls=":", lw=1.2, label=f"R threshold (A={A_r:.0f})")
         for a in s["alarms_f"]:
             ax[1].axvline(a, color=ACCENT, lw=0.8, alpha=0.6)
         for a in s["alarms_r"]:
@@ -270,7 +288,7 @@ def make_figures(R, rec, fr, spl, outdir):
         plt.close(fig)
 
 
-def replay_payload(s, title, change_points=(), t_live=0, n_points=2400):
+def replay_payload(s, title, change_points=(), t_live=0, n_points=2400, thresholds=None):
     y = np.asarray(s["y"])
     T = len(y)
     k = max(1, T // n_points)
@@ -293,6 +311,8 @@ def replay_payload(s, title, change_points=(), t_live=0, n_points=2400):
                weights=[[round(float(v), 3) for v in row] for row in np.asarray(s["weights"])[idx]],
                alarms_f=[int(a) for a in s["alarms_f"]], alarms_r=[int(a) for a in s["alarms_r"]],
                b3_alarms=[int(a) for a in s.get("b3_alarms", [])])
+    if thresholds:
+        out["thr_f"], out["thr_r"] = [round(math.log10(1 + a), 4) for a in thresholds]
     if "time" in s:
         tm = np.asarray(s["time"])[: T]
         out["clock"] = [round(float((v - 34200) / 3600 + 9.5), 3) for v in tm[idx]]
@@ -321,7 +341,7 @@ def write_summary(R, path):
     if tw_c and b3_c:
         S["stats"].append({"v": f"−{100*(1-tw_c/b3_c):.0f}%", "k": "cost of delay after a concept flip vs rolling-KS + retrain (synthetic, 3000 events)"})
     if tw_c and b4_c:
-        S["stats"].append({"v": f"−{100*(1-tw_c/b4_c):.0f}%", "k": "… vs the best fixed-forgetting RLS, λ picked in hindsight"})
+        S["stats"].append({"v": f"−{100*(1-tw_c/b4_c):.0f}%", "k": "… vs the best fixed-forgetting RLS, λ picked in hindsight (95 % CIs overlap)"})
     ks = _m(calm, "B3 rolling-KS + retrain", "false_alarms_per_50k")
     twfa = _m(calm, "TRIPWIRE-LOB", "false_alarms_per_50k")
     if ks is not None and twfa is not None:
@@ -346,7 +366,7 @@ def write_summary(R, path):
         S["stats"].append({"v": f"{100*det:.0f}%", "k": f"injected concept breaks caught on real data by Monitor R (|residual| monitor: {100*a4:.0f} %)"})
         cod_tw = np.mean([r["models"]["TRIPWIRE-LOB"]["changes"][0]["cod_3000"] for r in inj])
         cod_b4 = np.mean([r["models"]["B4 best fixed-forgetting RLS"]["changes"][0]["cod_3000"] for r in inj])
-        S["stats"].append({"v": f"−{100*(1-cod_tw/cod_b4):.0f}%", "k": "cost of delay on real data with an injected break vs best fixed-forgetting RLS"})
+        S["stats"].append({"v": f"−{100*(1-cod_tw/cod_b4):.0f}%", "k": "cost of delay on real LOBSTER with an injected reversed-and-tripled signal (β = −3) vs best fixed-forgetting RLS"})
     if tw_c and b3_c and ks is not None:
         S["headline"] = f"{100*(1-tw_c/b3_c):.0f}% Lower Cost<br>Of Delay. Alarms<br>You Can Budget."
     # compact html tables
