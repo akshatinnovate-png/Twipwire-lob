@@ -292,7 +292,7 @@ function shock(kind){ post({action:'shock',kind}); }
 function setSpeed(v){ $('speedv').textContent=v; post({action:'speed',value:+v}); }
 
 function setupCanvas(c){
-  const dpr = window.devicePixelRatio||1, w = c.clientWidth, h = +c.getAttribute('height');
+  const dpr = window.devicePixelRatio||1, w = c.clientWidth; if (!c.dataset.h) c.dataset.h = c.getAttribute('height'); const h = +c.dataset.h;  // logical height; c.height is device pixels
   if (c.width !== Math.round(w*dpr)) { c.width = Math.round(w*dpr); c.height = Math.round(h*dpr); c.style.height = h+'px'; }
   const g = c.getContext('2d'); g.setTransform(dpr,0,0,dpr,0,0); g.clearRect(0,0,w,h);
   return [g,w,h];
