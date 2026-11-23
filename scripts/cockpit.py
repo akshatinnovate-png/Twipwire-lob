@@ -295,14 +295,19 @@ class Session:
         return ", ".join(f"{PRETTY[FEATURE_NAMES[k]]} {100 * max(c[k], 0) / tot:.0f}%" for k in top)
 
     def _watch_recurrence(self):
+        """Log when an expert from an earlier regime (the frozen ridge = opening calm regime,
+        or a spawned regime head) falls out of use and later wins the weight back."""
         pool = self.engine.pool
         w = pool.w
-        if self.prev_w is not None:
-            for k in range(len(w)):
-                frozen = pool.active[k] and not pool.learning[k]
-                if frozen and self.prev_w[k] < 0.15 <= 0.30 <= w[k] and (k == 0 or pool.spawn_count > 0):
-                    self.event(f"REGIME RECURRENCE: {SLOT_NAMES[k]} regained {100 * w[k]:.0f}% of the weight -> an old regime is back, its saved expert takes over")
-        self.prev_w = w.copy()
+        if self.prev_w is None:
+            self.prev_w = np.zeros(len(w), dtype=bool)            # latch: armed once an expert is unused
+        for k in [0] + [j for j in range(pool.first_spawn, pool.K) if pool.active[j]]:
+            if w[k] < 0.10:
+                self.prev_w[k] = True
+            elif self.prev_w[k] and w[k] >= 0.30:
+                self.prev_w[k] = False
+                who = "frozen ridge (fit on the opening calm regime)" if k == 0 else f"regime {SLOT_NAMES[k]}"
+                self.event(f"REGIME RECURRENCE: {who} won back {100 * w[k]:.0f}% of the weight -> an earlier regime is back and its saved expert takes over")
 
     # ------------------------------------------------------------------ main loop
     def advance(self, n):

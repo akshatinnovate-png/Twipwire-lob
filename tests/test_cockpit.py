@@ -100,6 +100,16 @@ def test_demo_flip_is_caught_after_prerun(seed):
     assert len(s.engine.alarms_r) > n0
 
 
+def test_recurrence_is_announced():
+    s = cockpit.Session("synthetic", seed=3)
+    s.advance(cockpit.SYNTH_PRERUN)
+    for kind in ("concept", "calm", "concept"):
+        s.shock(kind)
+        s.advance(6000)
+    msgs = [e["msg"] for e in s.log if "REGIME RECURRENCE" in e["msg"]]
+    assert any("frozen ridge" in m for m in msgs) and any("head" in m for m in msgs)
+
+
 def test_btc_source_warm_start_live_and_fallback(tmp_path, monkeypatch):
     rec = tmp_path / "btcusdt_test.csv"
     _write_recording(rec, 9000)

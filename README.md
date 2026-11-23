@@ -46,7 +46,7 @@ To reproduce **every number** in this README and in `results/`:
 
 ```bash
 python scripts/run_benchmarks.py          # ~25 min on 4 cores; --quick for a ~5 min smoke run
-python -m pytest -q                       # 17 tests: no look-ahead, valid bet, ARL, coverage, RLS, cockpit, mock-exchange BTC feed
+python -m pytest -q                       # 18 tests: no look-ahead, valid bet, ARL, coverage, RLS, cockpit, mock-exchange BTC feed
 python scripts/splice_study.py            # ~40 min: detector variants vs splices and the false-alarm null
 ```
 
@@ -95,26 +95,26 @@ All tables are in [`results/tables.md`](results/tables.md) and figures in `resul
 
 | Committed target | Result | Met |
 |---|---|---|
-| False alarms within 2× nominal | Real data, block-shuffled null (observed / nominal, F; R): AAPL 1.01; 0.17 · AMZN 1.02; 0.38 · MSFT 1.56; 1.14. Synthetic calm: 0.16; 0.18 | yes |
-| Lower cost of delay than B3 and B4 on concept-shift cells | Concept 2827 ± 218 vs B3 3941 ± 570, B4 3028 ± 337 · coupled 4185 ± 335 vs 7755 ± 1080, 5083 ± 481 | yes (vs B4 on the concept cell the CIs overlap) |
+| False alarms within 2× nominal | Real data, block-shuffled null (observed / nominal, F; R): AAPL 1.01; 0.17 · AMZN 1.02; 0.38 · MSFT 1.56; 1.14. Synthetic calm: 0.15; 0.36 | yes |
+| Lower cost of delay than B3 and B4 on concept-shift cells | Concept 2685 ± 198 vs B3 3941 ± 570, B4 3028 ± 337 · coupled 4049 ± 313 vs 7755 ± 1080, 5083 ± 481 | yes (vs B4 on the concept cell the CIs overlap) |
 | Coverage within 5 points of 90 % | 89.7–90.0 % on every real stream; 89.8–90.0 % on every synthetic cell | yes |
 | MVP 1: predict short-term price direction or spread | AAPL / AMZN / MSFT, h = 10 and 50, mid and spread targets (table below) | yes |
 | MVP 2: detect a shift with a statistical test and show the model reacting | Two sequential tests; live cockpit; replays | yes |
 | Stretch: multiple regime-adaptive heads | Spawned heads are kept frozen; in the recurrence run the frozen head and the frozen ridge win weight back when their regimes return (`results/figures/recurrence.png`) | yes |
-| Stretch: latency under a budget | p50 ≈ 80 µs, p99 ≤ 226 µs per event on one core (budget 1 ms) | yes |
+| Stretch: latency under a budget | p50 ≈ 70 µs, p99 ≤ 200 µs per event on one core (budget 1 ms) | yes |
 
 ### Synthetic 2×2 benchmark (20 seeds, h = 10, change at event 20 000)
 
 | Cell | Cost of delay @3000, TRIPWIRE | B3 rolling-KS | B4 best λ (hindsight) | B1 frozen | Monitor R fired / delay | Monitor F fired / delay |
 |---|---|---|---|---|---|---|
-| covariate (P(X) only) | 596 ± 105 | 3683 ± 492 | 567 ± 109 | 3881 | 5 % / – | 100 % / 629 |
-| concept (P(Y\|X) only) | **2827 ± 218** | 3941 ± 570 | 3028 ± 337 | 9339 | 100 % / 727 | 20 % / – |
-| coupled (both) | **4185 ± 335** | 7755 ± 1080 | 5083 ± 481 | 31 712 | 100 % / 259 | 100 % / 629 |
+| covariate (P(X) only) | 607 ± 105 | 3683 ± 492 | 567 ± 109 | 3881 | 15 % / – | 100 % / 629 |
+| concept (P(Y\|X) only) | **2685 ± 198** | 3941 ± 570 | 3028 ± 337 | 9339 | 100 % / 577 | 20 % / – |
+| coupled (both) | **4049 ± 313** | 7755 ± 1080 | 5083 ± 481 | 31 712 | 100 % / 162 | 100 % / 629 |
 
-* **Shift-type selectivity.** Monitor R stays quiet on harmless covariate shifts (5 %) and fires on every concept shift. Monitor F fires on every P(X) shift.
-* **Calm data.** False alarms per 50k events: Monitor F 0.40, Monitor R 0.16, rolling KS 17.8.
-* **Silent-failure time after a concept flip.** 134 events for TRIPWIRE, 679 for B3, and about 14 000 for models that never alarm.
-* **Ablations.** Removing Monitor R raises concept cost of delay from 2827 to 3210. With the abstract's \|residual\| score, Monitor R fires on only 15 % of concept flips (orthogonality: 100 %).
+* **Shift-type selectivity.** Monitor R fires on every concept shift and on 15 % of harmless covariate shifts (3 of 20; the price of its faster 30-event blocks, which cut concept-flip delay from 727 to 577 events). Monitor F fires on every P(X) shift.
+* **Calm data.** False alarms per 50k events: Monitor F 0.37, Monitor R 0.07, rolling KS 18.0.
+* **Silent-failure time after a concept flip.** 60 events for TRIPWIRE, 678 for B3, and about 14 000 for models that never alarm.
+* **Ablations.** Removing Monitor R raises concept cost of delay from 2685 to 3210. With the abstract's \|residual\| score, Monitor R fires on only 25 % of concept flips (orthogonality: 100 %).
 
 ### Real LOBSTER data (21 June 2012, full day, walk-forward, labels delayed h events)
 
