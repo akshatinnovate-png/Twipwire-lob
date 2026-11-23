@@ -1,18 +1,28 @@
 """Live TRIPWIRE-LOB cockpit. Standard library only, works offline.
 
-    python scripts/cockpit.py            # then open http://localhost:8765
+    python scripts/cockpit.py                 # then open http://localhost:8765
+    python demo.py --source AAPL              # one-command launcher (opens the browser)
 
 The engine runs live in this process; the page receives frames over
-Server-Sent Events. Shock buttons change the data-generating process while it
+Server-Sent Events. Shock buttons (or keys 1/2/3/0) change the data while it
 streams:
-  * synthetic source: switch the generator's regime (concept / covariate / both / calm)
-  * AAPL / AMZN / MSFT source (real LOBSTER events): inject a concept flip into the
-    real label stream (P(X) untouched), as in the benchmark's injection protocol.
+  * synthetic: switch the generator's regime (concept / covariate / both / calm)
+  * AAPL / AMZN / MSFT (real LOBSTER events) and BTC: inject a concept flip
+    into the real label stream (P(X) untouched), as in the benchmark protocol.
+
+Beside TRIPWIRE the cockpit runs the standard baseline live: a rolling
+two-sample KS test on every feature (Bonferroni), exactly as B3 in the
+benchmark, so viewers can watch it alarm on calm data.
+
+BTC source: warm-starts from the newest recording in data/btc/ (make one with
+scripts/record_binance.py), then follows Binance's live 10-level book. If the
+network fails it falls back to replaying the recording and says so on screen.
 """
 
 from __future__ import annotations
 
 import argparse
+import glob
 import json
 import math
 import os
@@ -20,7 +30,6 @@ import sys
 import threading
 import time
 from collections import deque
-from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import numpy as np
@@ -28,12 +37,36 @@ import numpy as np
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, ROOT)
 
-from tripwire import FeatureExtractor, TripwireConfig, TripwireEngine  # noqa: E402
+from tripwire import FEATURE_NAMES, FeatureExtractor, TripwireConfig, TripwireEngine  # noqa: E402
+from tripwire.baselines import ks_crit, ks_stat  # noqa: E402
+from tripwire.lobster import load_lobster  # noqa: E402
 from tripwire.pool import ridge_fit  # noqa: E402
 from tripwire.synthetic import CALM, CONCEPT, COUPLED, COVARIATE, SyntheticBook  # noqa: E402
 
 REGIMES = {"calm": CALM, "concept": CONCEPT, "covariate": COVARIATE, "coupled": COUPLED}
 COCKPIT = os.path.join(ROOT, "cockpit")
+PRETTY = {
+    "ofi_l1": "order flow L1", "ofi_l2": "order flow L2", "ofi_l3": "order flow L3", "ofi_l4": "order flow L4",
+    "ofi_l5": "order flow L5", "ofi_deep_6_10": "deep order flow", "microprice_minus_mid": "micro-price",
+    "imb_l1": "L1 imbalance", "imb_l1_3": "L1-3 imbalance", "imb_l1_5": "L1-5 imbalance",
+    "imb_l1_10": "L1-10 imbalance", "bid_logdepth_slope": "bid depth slope", "ask_logdepth_slope": "ask depth slope",
+    "log_spread_ticks": "spread", "vol_ratio_20_200": "volatility ratio", "past_return_h": "recent return",
+}
+SLOT_NAMES = ["frozen ridge", "RLS .998", "RLS .9995", "RLS .99995", "RLS λ=1", "head 1", "head 2", "head 3", "head 4"]
+KS_REF, KS_CUR, KS_EVERY = 3000, 600, 100
+# Monitor R tests the long-memory expert; it needs a settled history before a shock (a flip
+# ~7k events after warm-up can go undetected). Pre-run this many calm events at full speed.
+SYNTH_PRERUN = 20_000
+BTC_DIR = os.path.join(ROOT, "data", "btc")
+FEED_HOSTS = None          # overridden by --btc-hosts (tests point this at a local mock server)
+
+
+def btc_recordings():
+    return sorted(glob.glob(os.path.join(BTC_DIR, "*.csv")), key=os.path.getmtime)
+
+
+def btc_recordings_ok():
+    return [p for p in btc_recordings() if not p.endswith("_times.csv")]
 
 
 class Session:
@@ -42,24 +75,31 @@ class Session:
     def __init__(self, source="synthetic", seed=None):
         self.lock = threading.Lock()
         self.source = source
-        self.speed = 400.0          # events per second
+        self.speed = 400.0          # events per second (replays; live BTC runs at the market's pace)
         self.paused = False
+        self.dead = False
         self.log = deque(maxlen=60)
         self.seed = int(seed if seed is not None else time.time()) % 100000
+        self.feed = None
         self._setup()
 
     # ------------------------------------------------------------------ data sources
     def _setup(self):
+        self.t = 0
+        self.beta = 1.0
+        self.book = None
         if self.source == "synthetic":
             self.h = 10
             self.cfg = TripwireConfig(horizon=10, arl_events=50_000, seed=self.seed)
             self.gen = SyntheticBook(horizon=10, seed=self.seed, regime=CALM)
             self.fx = FeatureExtractor(0.01, 10)
             self.regime = "calm"
+        elif self.source == "BTC":
+            self._setup_btc()
         else:
             path = os.path.join(ROOT, "data", "cache", f"{self.source}_feat_h50.npz")
             if not os.path.exists(path):
-                raise FileNotFoundError(f"{path} missing: run scripts/run_benchmarks.py or fetch LOBSTER data first")
+                raise FileNotFoundError(f"{path} missing: run python scripts/fetch_lobster.py then python scripts/build_cache.py")
             z = np.load(path)
             self.h = 50
             self.cfg = TripwireConfig(horizon=50, n_fit=20_000, n_ref=10_000, arl_events=60_000, seed=self.seed)
@@ -70,17 +110,18 @@ class Session:
             y[:-self.h] = self.mid[self.h:] - self.mid[:-self.h]
             Zs = (self.X - self.X.mean(0)) / (self.X.std(0) + 1e-9)
             th, _ = ridge_fit(Zs[: n - self.h], y[: n - self.h], 10.0)
-            self.g = Zs @ th                       # real signal used for injection
+            self.g = Zs @ th                       # the real signal, reversed by a concept shock
             self.y_real = y
             self.lv_hist = np.zeros(n)
-            self.beta = 1.0
             self.beta_hist = np.ones(n)
             self.i = 0
             self.regime = "real (no injection)"
-        self.engine = TripwireEngine(self.cfg)
-        self.t = 0
-        self.mid_now = 0.0
-        self.book = None
+        if self.source != "BTC":
+            self.engine = TripwireEngine(self.cfg)
+        self._reset_displays()
+        self.event(f"session started: source={self.source}, h={self.h}, seed={self.seed}")
+
+    def _reset_displays(self):
         self.cov_win = deque(maxlen=2000)
         self.call_win = deque(maxlen=2000)
         self.hit_win = deque(maxlen=2000)
@@ -89,66 +130,198 @@ class Session:
         self.lat = deque(maxlen=5000)
         self.pending = deque()
         self.frames = deque(maxlen=400)
-        self.event(f"session started: source={self.source}, h={self.h}, seed={self.seed}")
+        self.ks_buf = deque(maxlen=KS_REF + KS_CUR)
+        self.ks_cool = 0
+        self.ks_alarms = 0
+        self.ks_crit = ks_crit(KS_REF, KS_CUR, 0.01 / len(FEATURE_NAMES))
+        self.shock_t = None
+        self.dmg_tw = 0.0
+        self.dmg_b1 = 0.0
+        self.dmg_n = 0
+        self.prev_w = None
 
+    # ---------------------------------------------------------------- BTC (live)
+    def _setup_btc(self):
+        from tripwire.livefeed import BookFeed
+        self.h = 20
+        # short warm-up so a 30-45 minute recording is enough (live book ~4-5 events/s)
+        self.cfg = TripwireConfig(horizon=20, n_fit=2000, n_ref=2000, arl_events=20_000, stride_f=100,
+                                  f_min_ref=30, seed=self.seed)
+        self.engine = TripwireEngine(self.cfg)
+        self.fx = FeatureExtractor(0.01, self.h)
+        self.mid_ring = deque(maxlen=self.h)       # events t-h .. t-1
+        self.lvl_ring = deque(maxlen=self.h)
+        self.beta_ring = deque(maxlen=self.h)
+        recs = btc_recordings_ok()
+        self.rec = None
+        self.rec_i = 0
+        self.mode = "live"
+        if recs:
+            d = load_lobster(recs[-1])
+            self.rec = (d["bid_p"], d["bid_s"], d["ask_p"], d["ask_s"])
+            n = len(self.rec[0])
+            for i in range(n):                         # fast-forward the warm-up on recorded data
+                self._process_book(*(a[i] for a in self.rec), warm=True)
+            self.event(f"warm-started on recording {os.path.basename(recs[-1])} ({n:,} book events)")
+            if self.engine.t_live is None:
+                self.event("recording too short to finish the warm-up: keep the feed running (or record longer)")
+        else:
+            self.event("no BTC recording in data/btc/: warming up on the live feed (takes ~30 min)")
+        self.feed = BookFeed(hosts=FEED_HOSTS).start()
+        self.regime = "live BTC-USDT (no injection)"
+
+    def _process_book(self, bp, bs, ap, as_, warm=False):
+        """Feature step + label injection for a BTC book. Returns (x, mid, spread, level).
+        Sizes arrive in BTC (often < 1); the feature code floors sizes at 1, so work in milli-BTC."""
+        bs = np.asarray(bs, dtype=float) * 1000.0
+        as_ = np.asarray(as_, dtype=float) * 1000.0
+        x, mid, spr = self.fx.update(bp, bs, ap, as_)
+        eng = self.engine
+        if len(self.mid_ring) == self.h:
+            # the label of event j = t-h matures now; a concept shock adds (beta-1) x the frozen
+            # ridge's forecast for event j (the book's 'signal'), which leaves P(X) untouched
+            j = self.t - self.h
+            g_j = float(eng.buf_preds[j % eng.L][0]) if eng.fitted else 0.0
+            y_j = mid - self.mid_ring[0] + (self.beta_ring[0] - 1.0) * g_j
+            level = self.lvl_ring[0] + y_j
+            x[15] = y_j
+        else:
+            level = mid
+        self.mid_ring.append(mid)
+        self.lvl_ring.append(level)
+        self.beta_ring.append(self.beta)
+        if warm:
+            eng.step(x, level, spr, level)
+            self.t += 1
+            return None
+        self.book = (bp, bs, ap, as_)
+        return x, level, spr, level
+
+    def _next_btc(self):
+        feed = self.feed
+        if feed.status == "live":
+            if self.mode != "live":
+                self.mode = "live"
+                self.event(f"BTC feed is LIVE again ({feed.host})")
+            b = feed.get()
+            return None if b is None else self._process_book(*b)
+        if self.rec is not None and feed.status == "down":
+            if self.mode != "replay":
+                self.mode = "replay"
+                self.event(f"BTC feed down ({feed.last_error[:80]}): replaying the recording, clearly labelled")
+            n = len(self.rec[0])
+            i = self.rec_i % n
+            self.rec_i += 1
+            return self._process_book(*(a[i] for a in self.rec))
+        return None
+
+    # ------------------------------------------------------------------ events
     def event(self, msg):
         self.log.append({"t": self.t, "msg": msg, "wall": time.strftime("%H:%M:%S")})
 
+    def ready(self):
+        return self.engine.t_live is not None and (self.source != "synthetic" or self.t >= SYNTH_PRERUN)
+
     def shock(self, kind):
         with self.lock:
+            self.shock_t = self.t
+            self.dmg_tw = self.dmg_b1 = 0.0
+            self.dmg_n = 0
             if self.source == "synthetic":
                 self.gen.regime = REGIMES[kind]
                 self.regime = kind
                 self.event(f"SHOCK injected at event {self.t}: regime -> {kind.upper()} (ground truth, hidden from the model)")
             else:
                 self.beta = {"calm": 1.0, "concept": -3.0, "coupled": -3.0, "covariate": 1.0}[kind]
-                self.regime = "real + reversed signal (β=-3)" if self.beta != 1.0 else "real (no injection)"
-                self.event(f"SHOCK at event {self.t}: real-label signal multiplier β -> {self.beta:g}")
+                base = "live BTC-USDT" if self.source == "BTC" else "real"
+                self.regime = f"{base} + reversed signal (β=-3)" if self.beta != 1.0 else f"{base} (no injection)"
+                if kind == "covariate":
+                    self.event("real data: a covariate shock can't be injected without faking the book; use CONCEPT FLIP")
+                else:
+                    self.event(f"SHOCK at event {self.t}: real-label signal multiplier β -> {self.beta:g}")
 
-    # ------------------------------------------------------------------ one event
     def _next(self):
         if self.source == "synthetic":
             bp, bs, ap, as_, _ = self.gen.step()
             x, mid, spr = self.fx.update(bp, bs, ap, as_)
             self.book = (bp, bs, ap, as_)
-            level = mid
-        else:
-            i = self.i % len(self.mid)
-            if i == 0 and self.i > 0:
-                self.event("end of day reached: restarting replay")
-                self._setup()
-                return self._next()
-            h = self.h
-            self.beta_hist[i] = self.beta
-            if i >= h:
-                j = i - h
-                yj = self.y_real[j] + (self.beta_hist[j] - 1.0) * self.g[j]
-                self.lv_hist[i] = self.lv_hist[j] + yj
-            level = self.lv_hist[i]
-            x = self.X[i].copy()
-            if i >= h:
-                x[15] = level - self.lv_hist[i - h]
-            spr = self.spr[i]
-            mid = level
-            self.book = None
-            self.i += 1
-        return x, mid, spr, level
+            return x, mid, spr, mid
+        if self.source == "BTC":
+            return self._next_btc()
+        i = self.i % len(self.mid)
+        if i == 0 and self.i > 0:
+            self.event("end of day reached: restarting replay")
+            self._setup()
+            return self._next()
+        h = self.h
+        self.beta_hist[i] = self.beta
+        if i >= h:
+            j = i - h
+            yj = self.y_real[j] + (self.beta_hist[j] - 1.0) * self.g[j]
+            self.lv_hist[i] = self.lv_hist[j] + yj
+        level = self.lv_hist[i]
+        x = self.X[i].copy()
+        if i >= h:
+            x[15] = level - self.lv_hist[i - h]
+        self.book = None
+        self.i += 1
+        return x, level, self.spr[i], level
 
+    # ------------------------------------------------------------------ live baseline: rolling KS
+    def _ks_step(self, x):
+        eng = self.engine
+        if not eng.fitted:
+            return 0
+        self.ks_buf.append(eng._standardise(np.asarray(x, dtype=float)))
+        self.ks_cool -= 1
+        if eng.t_live is None or self.t % KS_EVERY or self.ks_cool > 0 or len(self.ks_buf) < KS_REF + KS_CUR:
+            return 0
+        Z = np.asarray(self.ks_buf)
+        ref, cur = Z[:KS_REF], Z[KS_REF:]
+        for k in range(Z.shape[1]):
+            if ks_stat(np.sort(ref[:, k]), cur[:, k]) > self.ks_crit:
+                self.ks_cool = KS_REF
+                self.ks_alarms += 1
+                calm = self.regime in ("calm",) or "no injection" in self.regime
+                self.event(f"rolling-KS ALARM on '{PRETTY[FEATURE_NAMES[k]]}' -> the standard baseline would retrain now"
+                           + (" (nothing changed: false alarm)" if calm and self.shock_t is None and self.source == "synthetic" else ""))
+                return 1
+        return 0
+
+    def _explain_f(self):
+        c = self.engine.f_contrib
+        top = np.argsort(-c)[:3]
+        tot = float(np.sum(np.maximum(c, 0))) + 1e-12
+        return ", ".join(f"{PRETTY[FEATURE_NAMES[k]]} {100 * max(c[k], 0) / tot:.0f}%" for k in top)
+
+    def _watch_recurrence(self):
+        pool = self.engine.pool
+        w = pool.w
+        if self.prev_w is not None:
+            for k in range(len(w)):
+                frozen = pool.active[k] and not pool.learning[k]
+                if frozen and self.prev_w[k] < 0.15 <= 0.30 <= w[k] and (k == 0 or pool.spawn_count > 0):
+                    self.event(f"REGIME RECURRENCE: {SLOT_NAMES[k]} regained {100 * w[k]:.0f}% of the weight -> an old regime is back, its saved expert takes over")
+        self.prev_w = w.copy()
+
+    # ------------------------------------------------------------------ main loop
     def advance(self, n):
         rows = []
         for _ in range(n):
-            x, mid, spr, level = self._next()
+            nxt = self._next()
+            if nxt is None:                       # live feed: no new book yet
+                break
+            x, mid, spr, level = nxt
             t0 = time.perf_counter_ns()
             o = self.engine.step(x, mid, spr, level)
             lat = (time.perf_counter_ns() - t0) * 1e-3
             eng = self.engine
             self.t += 1
-            self.mid_now = mid
             live = o[8] > 0
             if live:
                 self.lat.append(lat)
+            ks = self._ks_step(x)
             yhat, q, call = float(o[0]), float(o[1]), float(o[2])
-            # bookkeeping for display metrics, evaluated when the label matures
             self.pending.append((self.t - 1, level, yhat, q, call, float(eng.buf_preds[(self.t - 1) % eng.L][0]) if eng.fitted else 0.0))
             while self.pending and self.pending[0][0] <= self.t - 1 - self.h:
                 t_old, lv_old, yh_old, q_old, c_old, b1_old = self.pending.popleft()
@@ -160,13 +333,22 @@ class Session:
                         self.hit_win.append(1.0 if (y > 0) == (c_old > 0) else 0.0)
                     self.err_tw.append((y - yh_old) ** 2)
                     self.err_b1.append((y - b1_old) ** 2)
+                    if self.shock_t is not None and t_old >= self.shock_t:
+                        self.dmg_tw += (y - yh_old) ** 2
+                        self.dmg_b1 += (y - b1_old) ** 2
+                        self.dmg_n += 1
             if o[5]:
-                self.event(f"MONITOR F ALARM at event {self.t}: feature distribution moved -> interval x{self.cfg.f_inflation} (weights untouched)")
+                self.event(f"MONITOR F ALARM at event {self.t}: the book looks different (top movers: {self._explain_f()}) (evidence crossed A = {eng.mon_f.A:,.0f}) -> interval x{self.cfg.f_inflation}, model untouched")
             if o[6]:
-                self.event(f"MONITOR R ALARM at event {self.t}: forecasts became unreliable -> spawned regime head, switching rate boosted")
+                self.event(f"MONITOR R ALARM at event {self.t}: matured forecast errors lined up against the forecast "
+                           f"(evidence crossed A = {eng.mon_r.A:,.0f}) -> new regime head, faster re-weighting")
+            if live and self.t % 25 == 0:
+                self._watch_recurrence()
             if eng.t_live is not None and self.t == eng.t_live:
                 self.event(f"warm-up done at event {self.t}: walk-forward forecasting is LIVE")
-            rows.append((self.t, mid, yhat, q, call, float(o[3]), float(o[4]), int(o[5]), int(o[6]), live))
+            if self.source == "synthetic" and self.t == SYNTH_PRERUN:
+                self.event(f"pre-ran {SYNTH_PRERUN:,} calm events so the long-memory expert has settled: ready for shocks")
+            rows.append((self.t, mid, yhat, q, call, float(o[3]), float(o[4]), int(o[5]), int(o[6]), live, ks))
         return rows
 
     def frame(self, rows):
@@ -178,8 +360,9 @@ class Session:
         fr = {
             "t": last[0], "source": self.source, "h": self.h, "regime": self.regime,
             "live": bool(last[9]),
-            "phase": ("live" if last[9] else ("fitting" if not eng.fitted else "calibrating detectors")),
-            "pts": [[r[0], round(r[1], 3), round(r[2], 4), round(r[3], 4), r[4], round(r[5], 3), round(r[6], 3), r[7], r[8]] for r in rows],
+            "phase": ("live" if last[9] and not (self.source == "synthetic" and self.t < SYNTH_PRERUN)
+                      else ("fitting" if not eng.fitted else ("calibrating detectors" if not last[9] else "settling (pre-run)"))),
+            "pts": [[r[0], round(r[1], 3), round(r[2], 4), round(r[3], 4), r[4], round(r[5], 3), round(r[6], 3), r[7], r[8], r[10]] for r in rows],
             "thr_f": math.log10(1 + A_f), "thr_r": math.log10(1 + A_r),
             "weights": [round(float(w), 4) for w in eng.pool.w],
             "active": [bool(a) for a in eng.pool.active],
@@ -190,29 +373,47 @@ class Session:
             "lat_p50": round(float(np.percentile(self.lat, 50)), 1) if self.lat else None,
             "lat_p99": round(float(np.percentile(self.lat, 99)), 1) if self.lat else None,
             "n_alarms_f": len(eng.alarms_f), "n_alarms_r": len(eng.alarms_r), "spawns": eng.pool.spawn_count,
+            "n_alarms_ks": self.ks_alarms,
+            "dmg": None if self.shock_t is None else {"tw": round(self.dmg_tw, 1), "b1": round(self.dmg_b1, 1), "n": self.dmg_n},
             "log": list(self.log)[-14:], "speed": self.speed, "paused": self.paused,
         }
         if self.book is not None:
             bp, bs, ap, as_ = self.book
-            fr["book"] = {"bid_p": [round(v, 2) for v in bp], "bid_s": bs.tolist(), "ask_p": [round(v, 2) for v in ap], "ask_s": as_.tolist()}
-        if self.source != "synthetic" and self.time is not None:
+            fr["book"] = {"bid_p": [round(float(v), 2) for v in bp], "bid_s": [float(v) for v in bs],
+                          "ask_p": [round(float(v), 2) for v in ap], "ask_s": [float(v) for v in as_]}
+        if self.source == "BTC":
+            fr["feed"] = {"status": self.feed.status if self.feed else "none", "mode": self.mode,
+                          "host": (self.feed.host or "").replace("https://", "") if self.feed else ""}
+            fr["clock_text"] = time.strftime("%H:%M:%S") + (" · LIVE BTC-USDT" if self.mode == "live" else " · REPLAY (feed down)")
+        elif self.source != "synthetic" and self.time is not None:
             ii = min(max(self.i - 1, 0), len(self.time) - 1)
             fr["clock"] = float(self.time[ii])
         return fr
 
     def run_forever(self):
         tick = 0.05
-        while True:
+        while not self.dead:
             t0 = time.time()
             with self.lock:
                 if not self.paused:
-                    warm = self.engine.t_live is None
-                    n = 4000 if warm else max(1, int(self.speed * tick))
+                    warm = self.source != "BTC" and (self.engine.t_live is None or
+                                                     (self.source == "synthetic" and self.t < SYNTH_PRERUN))
+                    if self.source == "BTC":
+                        n = 50 if self.mode == "live" else max(1, int(min(self.speed, 20) * tick) or 1)
+                    else:
+                        n = 4000 if warm else max(1, int(self.speed * tick))
                     rows = self.advance(n)
                     if warm:
                         rows = rows[-200:]
-                    self.frames.append(self.frame(rows))
+                    if rows:
+                        self.frames.append(self.frame(rows))
             time.sleep(max(0.0, tick - (time.time() - t0)))
+
+    def close(self):
+        self.dead = True
+        self.paused = True
+        if self.feed is not None:
+            self.feed.stop()
 
 
 STATE = {"session": None, "thread": None}
@@ -226,11 +427,11 @@ def start_session(source="synthetic", seed=None):
     s = Session(source, seed)
     old = STATE["session"]
     if old is not None:
-        old.paused = True
-        old.dead = True
+        old.close()
     STATE["session"] = s
+
     def loop():
-        while not getattr(s, "dead", False):
+        while not s.dead:
             try:
                 s.run_forever()
             except Exception as e:  # keep the demo alive
@@ -240,6 +441,13 @@ def start_session(source="synthetic", seed=None):
     th.start()
     STATE["thread"] = th
     return s
+
+
+def available_sources():
+    av = ["synthetic"] + [s for s in ("AAPL", "AMZN", "MSFT")
+                          if os.path.exists(os.path.join(ROOT, "data", "cache", f"{s}_feat_h50.npz"))]
+    av.append("BTC")
+    return av
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -266,9 +474,9 @@ class Handler(BaseHTTPRequestHandler):
         if path.startswith("/figures/"):
             return self._file(os.path.join(ROOT, "results", "figures", os.path.basename(path)), "image/png")
         if path == "/sources":
-            av = ["synthetic"] + [s for s in ("AAPL", "AMZN", "MSFT")
-                                  if os.path.exists(os.path.join(ROOT, "data", "cache", f"{s}_feat_h50.npz"))]
-            return self._send(200, json.dumps(av))
+            s = get_session()
+            return self._send(200, json.dumps({"sources": available_sources(), "current": s.source if s else None,
+                                               "btc_recordings": len(btc_recordings_ok())}))
         if path == "/stream":
             return self._stream()
         self._send(404, "{}")
@@ -318,14 +526,24 @@ class Handler(BaseHTTPRequestHandler):
         return self._send(200, json.dumps({"ok": True}))
 
 
+def serve(host="127.0.0.1", port=8765, source="synthetic"):
+    start_session(source)
+    srv = ThreadingHTTPServer((host, port), Handler)
+    srv.daemon_threads = True
+    return srv
+
+
 def main():
+    global FEED_HOSTS
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--host", default="127.0.0.1")
-    ap.add_argument("--source", default="synthetic")
+    ap.add_argument("--source", default="synthetic", help="synthetic | AAPL | AMZN | MSFT | BTC")
+    ap.add_argument("--btc-hosts", default=None, help="comma-separated feed hosts (default: Binance public hosts)")
     a = ap.parse_args()
-    start_session(a.source)
-    srv = ThreadingHTTPServer((a.host, a.port), Handler)
+    if a.btc_hosts:
+        FEED_HOSTS = a.btc_hosts.split(",")
+    srv = serve(a.host, a.port, a.source)
     print(f"TRIPWIRE-LOB cockpit -> http://{a.host}:{a.port}   (Ctrl+C to stop)")
     try:
         srv.serve_forever()

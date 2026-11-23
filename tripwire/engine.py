@@ -51,10 +51,20 @@ class TripwireEngine:
                                c.fs_eta, c.fs_alpha, c.loss_clip)
         A_f, A_r = c.thresholds()
         sf, sr = c.strides()
-        self.mon_f = ConformalSR(A_f, c.f_ref_size, c.f_ref_gap, c.f_min_ref, sf, seed=c.seed + 11, enabled=c.enable_f, min_ref_rearm=c.f_min_ref_rearm)
-        self.mon_r = ConformalSR(A_r, c.ref_size, c.ref_gap, c.min_ref, sr, seed=c.seed + 23, enabled=c.enable_r, min_ref_rearm=c.min_ref_rearm)
-        self.recent_X = deque(maxlen=c.spawn_window)
-        self.recent_y = deque(maxlen=c.spawn_window)
+        if c.f_dual_stride:
+            A_f = 2.0 * A_f                          # union bound: two monitors, half the budget each
+        self.mon_f = ConformalSR(A_f, c.f_ref_size, c.f_ref_gap, c.f_min_ref, sf, seed=c.seed + 11, enabled=c.enable_f, min_ref_rearm=c.f_min_ref_rearm, instant_rearm=c.instant_rearm, two_sided=c.f_two_sided)
+        self.mon_f2 = None
+        if c.f_dual_stride:
+            k = sf / c.f_dual_stride                  # keep each reference spanning the same number of events
+            A_f2 = 2.0 * max(c.arl_events / c.f_dual_stride, 20.0)
+            self.mon_f2 = ConformalSR(A_f2, int(c.f_ref_size * k), int(c.f_ref_gap * k), int(c.f_min_ref * k),
+                                      c.f_dual_stride, seed=c.seed + 13, enabled=c.enable_f,
+                                      min_ref_rearm=int(c.f_min_ref_rearm * k))
+        self.mon_r = ConformalSR(A_r, c.ref_size, c.ref_gap, c.min_ref, sr, seed=c.seed + 23, enabled=c.enable_r, min_ref_rearm=c.min_ref_rearm, instant_rearm=c.instant_rearm)
+        keep = max(c.spawn_window, c.spawn_window_max if c.spawn_from_changepoint else 0)
+        self.recent_X = deque(maxlen=keep)
+        self.recent_y = deque(maxlen=keep)
         self.boost_left = 0
         self.infl_left = 0
         self.tracker = None
@@ -66,6 +76,7 @@ class TripwireEngine:
         self.ref_slot = 1 + int(np.argmax(c.rls_lambdas))   # longest-memory RLS expert
         self.a_scale = 1.0 - math.exp(-math.log(2) / c.scale_halflife)
         self.alarms_f = []
+        self.f_contrib = np.zeros(self.d)
         self.alarms_r = []
         self.out = np.zeros(len(OUT_FIELDS))
 
@@ -141,7 +152,7 @@ class TripwireEngine:
             sy = math.sqrt(self.var_y)
 
             alpha = c.fs_alpha_boost if self.boost_left > 0 else c.fs_alpha
-            pool.fixed_share(preds_old, y, sy, alpha)
+            pool.fixed_share(preds_old, y, sy, alpha, c.fs_eta_boost if self.boost_left > 0 else 1.0)
             pool.rls_update(x_old, y, self.y_clip)
             self.recent_X.append(x_old.copy())
             self.recent_y.append(y)
@@ -158,8 +169,15 @@ class TripwireEngine:
                 alarm_r = True
                 self.alarms_r.append(t)
                 self.boost_left = c.boost_events
-                pool.spawn(np.asarray(self.recent_X), np.asarray(self.recent_y), c.ridge_l2,
-                           c.spawn_prior_weight, t)
+                if c.spawn_from_changepoint:
+                    n_back = self.mon_r.tests_since_quiet_at_alarm * self.mon_r.stride
+                    n_back = int(min(max(n_back, c.spawn_window_min), c.spawn_window_max, len(self.recent_y)))
+                else:
+                    n_back = min(c.spawn_window, len(self.recent_y))
+                self.last_spawn_window = n_back
+                Xr = np.asarray(self.recent_X)[-n_back:]
+                yr = np.asarray(self.recent_y)[-n_back:]
+                pool.spawn(Xr, yr, c.ridge_l2, c.spawn_prior_weight, t)
                 k = int(np.flatnonzero(pool.spawn_birth == t)[0])
                 self.buf_preds[:, k] = self.buf_x @ pool.theta[k]
             if self.boost_left > 0:
@@ -168,8 +186,14 @@ class TripwireEngine:
 
         # ---- 2. Monitor F on the current features (label-free)
         dz = z
-        score_f = float(dz @ self.prec @ dz)
-        if self.mon_f.update(score_f):
+        pz = self.prec @ dz
+        score_f = float(dz @ pz)
+        # per-feature share of the novelty score (display only: explains Monitor F alarms)
+        self.f_contrib += 0.02 * (dz * pz - self.f_contrib)
+        fired = self.mon_f.update(score_f)
+        if self.mon_f2 is not None and self.mon_f2.update(score_f):
+            fired = True
+        if fired:
             alarm_f = True
             self.alarms_f.append(t)
             self.infl_left = c.f_hold_events or (3 * h + 200)

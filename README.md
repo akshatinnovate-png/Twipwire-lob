@@ -21,30 +21,44 @@ It runs on one CPU core, about 80 µs per book event, in pure Python and NumPy.
 git clone -b claude/sleepy-clarke-7g7s3l https://github.com/akshatinnovate-png/twipwire-lob.git
 cd twipwire-lob
 pip install -r requirements.txt
-python scripts/cockpit.py                 # open http://localhost:8765
+python demo.py                            # checks, warms up, opens the cockpit in your browser
 ```
 
-That is enough for the live demo on synthetic data. To also replay **real LOBSTER data** in the cockpit:
+That is enough for the live demo on synthetic data (`python scripts/cockpit.py` starts the server without the launcher). To also replay **real LOBSTER data** in the cockpit:
 
 ```bash
 python scripts/fetch_lobster.py           # ~400 MB, once (AAPL, AMZN, MSFT; 21 June 2012)
 python scripts/build_cache.py             # features for the cockpit, a few minutes
 python scripts/preflight.py               # must print READY
+python demo.py --source AAPL              # or AMZN / MSFT
 ```
+
+**Live BTC-USDT** (needs internet on the laptop): record 30–45 minutes beforehand so the engine starts warm, then go live:
+
+```bash
+python scripts/record_binance.py --minutes 45
+python demo.py --source BTC
+```
+
+If the feed drops, the cockpit replays the recording and labels it **REPLAY** on screen.
 
 To reproduce **every number** in this README and in `results/`:
 
 ```bash
 python scripts/run_benchmarks.py          # ~25 min on 4 cores; --quick for a ~5 min smoke run
-python -m pytest -q                       # 10 tests: no look-ahead, valid bet, ARL, coverage, RLS, end-to-end
+python -m pytest -q                       # 17 tests: no look-ahead, valid bet, ARL, coverage, RLS, cockpit, mock-exchange BTC feed
+python scripts/splice_study.py            # ~40 min: detector variants vs splices and the false-alarm null
 ```
 
 ## The live cockpit
 
 `scripts/cockpit.py` runs the real engine in-process and streams to the browser. It uses only the standard library, so it works offline.
 
-* **Shock buttons**: CONCEPT FLIP (P(Y|X) reverses, P(X) identical), COVARIATE SHOCK (2.2× order flow, wider spread), LIQUIDITY SWEEP (both), BACK TO CALM.
-* **Sources**: synthetic generator, or real LOBSTER AAPL/AMZN/MSFT replayed event by event. On real data, CONCEPT FLIP reverses the real signal in the real label stream.
+* **Shock buttons / keys**: CONCEPT FLIP `1` (P(Y|X) reverses, P(X) identical), COVARIATE SHOCK `2` (2.2× order flow, wider spread), LIQUIDITY SWEEP `3` (both), BACK TO CALM `0`; `space` pause, `s` next source, `r` restart.
+* **Sources**: synthetic generator; real LOBSTER AAPL/AMZN/MSFT replayed event by event; live BTC-USDT from Binance's public book (warm-started from a recording, with replay fallback). On real data, CONCEPT FLIP reverses the real signal in the real label stream.
+* **The standard baseline runs live beside us**: rolling two-sample KS on every feature (exactly B3). Its alarms are marked ▼KS on the detector chart, so viewers watch it fire on calm data.
+* **Damage meter**: after each shock, the summed squared error of the frozen model vs TRIPWIRE, live.
+* **Alarms explain themselves**: a Monitor F alarm names the features that moved most; the log notes when a frozen regime head wins its weight back (**REGIME RECURRENCE**).
 * **Windows**: forecast with ŷ ± q and the realised move; both Shiryaev–Roberts statistics against their thresholds; fixed-share weights (learning / frozen / empty slots); the 10-level book; telemetry (coverage, call rate, hit rate, latency); and an event log.
 * **Evidence**: replays of recorded benchmark runs plus the headline tables. **Method**: the architecture.
 
@@ -56,7 +70,7 @@ The minute-by-minute finals script is in `docs/DEMO_SCRIPT.md`. Run `scripts/pre
 |---|---|---|
 | **A. Features** (`tripwire/features.py`) | 16 causal features per event from 10 book levels: multi-level OFI over trailing depth (L1–L5, deep L6–10), micro-price − mid, 4 depth imbalances, bid/ask log-depth slopes, log spread, 20/200 volatility ratio, past h-event return. | Causal by construction (tested). |
 | **B. Expert pool** (`tripwire/pool.py`) | K = 9: a frozen ridge; RLS with λ ∈ {0.998, 0.9995, 0.99995, 1}; and up to 4 heads spawned on Monitor-R alarms, each frozen when the next one spawns. Herbster–Warmuth fixed-share weights on matured labels, with η = 0.3/h because consecutive labels overlap by h−1 events. | Regret against the best switching sequence of experts, for bounded (winsorised) losses. The label delay loosens the bound, so we measure the gap to an oracle. |
-| **C. Detectors** (`tripwire/conformal.py`) | **Monitor F** (label-free): Mahalanobis novelty of the features. **Monitor R** (label-aware): the orthogonality score −(y−f)·f / (σ_y σ_f) of the long-memory expert f. Scores are averaged over non-overlapping blocks (F: 200 events; R: max(50, 2h)), turned into conformal p-values against a rolling, gapped reference, and fed to a Shiryaev–Roberts statistic R_t = (1+R_{t−1})·b(p_t) with the power-mixture bet b(p) = ∫₀¹ ε p^(ε−1) dε. Alarm at R_t ≥ A. | Under independent uniform p-values, R_t − t is a martingale, so the average run length to a false alarm is ≥ A. A = ARL_events / block, with ARL = 50k events (synthetic) or 60k events ≈ one AAPL market hour (real). On real data the guarantee is approximate; we **measure** it (see the false-alarm table). |
+| **C. Detectors** (`tripwire/conformal.py`) | **Monitor F** (label-free): Mahalanobis novelty of the features. **Monitor R** (label-aware): the orthogonality score −(y−f)·f / (σ_y σ_f) of the long-memory expert f. Scores are averaged over non-overlapping blocks (F: 200 events; R: max(30, 2h)), turned into conformal p-values against a rolling, gapped reference, and fed to a Shiryaev–Roberts statistic R_t = (1+R_{t−1})·b(p_t) with the power-mixture bet b(p) = ∫₀¹ ε p^(ε−1) dε. Alarm at R_t ≥ A. | Under independent uniform p-values, R_t − t is a martingale, so the average run length to a false alarm is ≥ A. A = ARL_events / block, with ARL = 50k events (synthetic) or 60k events ≈ one AAPL market hour (real). On real data the guarantee is approximate; we **measure** it (see the false-alarm table). |
 | **D. Loud degradation** (`tripwire/aci.py`, `engine.py`) | An online quantile of \|y − ŷ\| (adaptive conformal inference) gives a 90 % interval. An F alarm inflates it ×1.5 for 3h+200 events; an R alarm boosts its step, raises the switching rate for 100 labels and spawns a head. Calls: up/down only if \|ŷ\| > k*·q_t, where k* is calibrated on the warm-up to a 20 % call budget, so calls drop automatically when q widens. | Long-run miscoverage → α for any sequence at a fixed step size. The delay and the boosts are outside the theorem, so coverage is measured. |
 
 **Reactions.** A Monitor-F alarm means "the inputs look new": the interval widens and the model is left alone. A Monitor-R alarm means "the inputs mean something new": the model adapts. Neither overrides the weights directly.

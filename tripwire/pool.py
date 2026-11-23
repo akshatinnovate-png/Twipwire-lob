@@ -74,10 +74,11 @@ class ExpertPool:
             P[big] *= (cap / tr[big])[:, None, None]
         self.P[idx] = P
 
-    def fixed_share(self, preds_delayed: np.ndarray, y: float, scale: float, alpha: float) -> None:
+    def fixed_share(self, preds_delayed: np.ndarray, y: float, scale: float, alpha: float,
+                    eta_mult: float = 1.0) -> None:
         a = self.active
         loss = np.minimum(((y - preds_delayed[a]) / scale) ** 2, self.loss_clip)
-        v = self.w[a] * np.exp(-self.eta * (loss - loss.min()))
+        v = self.w[a] * np.exp(-self.eta * eta_mult * (loss - loss.min()))
         v /= v.sum()
         n = int(a.sum())
         self.w[:] = 0.0

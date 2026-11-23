@@ -6,3 +6,4 @@ __pycache__/
 scratch_*.py
 .pytest_cache/
 results/run_log.txt
+results/splice_study_log.txt

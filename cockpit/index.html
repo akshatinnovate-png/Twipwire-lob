@@ -74,12 +74,15 @@ canvas{display:block;width:100%}
 .row b{font-weight:600}
 .big-num{font-size:30px;font-weight:600;letter-spacing:-.02em}
 .log{height:220px;overflow:auto;font-size:12px;line-height:1.45;background:#121012;color:#e8e2e4;padding:8px}
-.log .a{color:#ff7aa2}.log .f{color:#7fd6cf}.log .s{color:#ffd36b}
+.log .k{color:#b8a9ad;font-style:italic}.log .a{color:#ff7aa2}.log .f{color:#7fd6cf}.log .s{color:#ffd36b}
 .legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;margin-top:6px}
 .legend i{display:inline-block;width:14px;height:3px;vertical-align:middle;margin-right:4px}
 .flash{animation:flash 1s ease-out}
 @keyframes flash{0%{box-shadow:0 0 0 6px var(--red)}100%{box-shadow:3px 3px 0 rgba(35,28,31,.55)}}
 input[type=range]{width:100%}
+.dmgrow{display:grid;grid-template-columns:96px 1fr 64px;gap:6px;align-items:center;font-size:12px;margin:3px 0}
+.dmgbar{height:12px;background:#f4f1f2;border:1px solid #231c1f}.dmgbar i{display:block;height:100%;width:0;transition:width .3s}
+.dmgrow b{text-align:right}
 /* ---------------------------------------------------------------- pink sections */
 .pinksec{background:var(--pink);color:#3a2a2f;padding:80px 16px 70px;position:relative}
 .corner{position:relative;padding:40px 10px}
@@ -169,6 +172,15 @@ footer .life{background:var(--pink);border-left:1px solid var(--ink);padding:6px
           <input type="range" id="speed" min="50" max="6000" step="50" value="400" oninput="setSpeed(this.value)">
           <div class="seg"><button onclick="post({action:'pause'})">⏯ pause</button><button onclick="post({action:'reset'})">↺ restart</button></div>
           <div style="font-size:11px;line-height:1.4;margin-top:4px">Ground-truth regime (hidden from the model): <b id="regime">–</b></div>
+          <div id="feedline" style="font-size:11px;margin-top:4px"></div>
+          <div style="margin-top:10px;border-top:2px solid #231c1f;padding-top:8px">
+            <div style="display:flex;justify-content:space-between"><b>DAMAGE SINCE LAST SHOCK</b><span id="dmg-n" style="font-size:11px"></span></div>
+            <div style="font-size:11px;margin:2px 0 6px">summed squared error after the shock (lower = less damage)</div>
+            <div class="dmgrow"><span>frozen model</span><div class="dmgbar"><i id="dmg-b1" style="background:#9a9093"></i></div><b id="dmg-b1v">–</b></div>
+            <div class="dmgrow"><span>TRIPWIRE</span><div class="dmgbar"><i id="dmg-tw" style="background:#231c1f"></i></div><b id="dmg-twv">–</b></div>
+            <div id="dmg-ratio" style="font-size:13px;margin-top:4px"></div>
+          </div>
+          <div style="font-size:11px;margin-top:8px;opacity:.8">keys: <b>1</b> flip · <b>2</b> shock · <b>3</b> sweep · <b>0</b> calm · <b>space</b> pause · <b>r</b> restart</div>
         </div>
       </div>
       <!-- detectors -->
@@ -176,7 +188,7 @@ footer .life{background:var(--pink);border-left:1px solid var(--ink);padding:6px
         <div class="title"><span>SEQUENTIAL DETECTORS ▸ Shiryaev–Roberts log10(1+R)</span><span class="x">⊠</span></div>
         <div class="content">
           <div class="inner"><canvas id="c-det" height="170"></canvas></div>
-          <div class="legend"><span><i style="background:#2f7f7a"></i>Monitor F (label-free, sees features now)</span><span><i style="background:#231c1f"></i>Monitor R (label-aware, sees matured errors)</span><span>- - dashed: each monitor's threshold A ⇒ average run length ≥ A blocks before a false alarm</span></div>
+          <div class="legend"><span><i style="background:#2f7f7a"></i>Monitor F (label-free, sees features now)</span><span><i style="background:#231c1f"></i>Monitor R (label-aware, sees matured errors)</span><span>- - dashed: each monitor's threshold A ⇒ average run length ≥ A blocks before a false alarm</span><span style="color:#c0263a">▼ rolling-KS baseline alarm (runs live beside us)</span></div>
         </div>
       </div>
       <!-- telemetry -->
@@ -338,6 +350,7 @@ function drawLive(){
     g.setLineDash([]); g.lineWidth=1;
     line(g,H.map(r=>sx(r[0])),H.map(r=>sy(r[5])),C.teal,1.5); line(g,H.map(r=>sx(r[0])),H.map(r=>sy(r[6])),C.ink,1.5);
     alarmLines(g,H,sx,hh,true);
+    for (const r of H){ if (r[9]){ const x=sx(r[0]); g.fillStyle=C.red; g.beginPath(); g.moveTo(x,hh-4); g.lineTo(x-6,hh-16); g.lineTo(x+6,hh-16); g.fill(); label(g,'KS',x+7,hh-6,C.red); } }
     label(g,`F threshold (A=${Math.round(10**last.thr_f-1)})`, w-170, sy(last.thr_f)-4, C.teal);
     label(g,`R threshold (A=${Math.round(10**last.thr_r-1)})`, w-170, sy(last.thr_r)-4, C.ink);
     label(g,`F: ${last.mon_f_state}   R: ${last.mon_r_state}`, 6, 13); }
@@ -364,13 +377,14 @@ function drawPool(fr){
 }
 function drawBook(fr){
   const [g,w,hh] = setupCanvas($('c-book'));
-  if (!fr.book){ label(g,'real replay: features are',8,20); label(g,'precomputed from LOBSTER;',8,34); label(g,'book ladder shown for',8,48); label(g,'synthetic source only',8,62); return; }
+  if (!fr.book){ label(g,'real replay: features are',8,20); label(g,'precomputed from LOBSTER;',8,34); label(g,'book ladder shown for',8,48); label(g,'synthetic and BTC sources',8,62); return; }
   const b = fr.book, rows = 10, rh = (hh-10)/(2*rows); const mx = Math.max(...b.bid_s, ...b.ask_s);
   for (let l=0;l<rows;l++){
     const ya = 5 + (rows-1-l)*rh, yb = 5 + (rows+l)*rh;
     g.fillStyle = 'rgba(192,38,58,.75)'; g.fillRect(w/2, ya+1, (w/2-6)*b.ask_s[l]/mx, rh-2);
     g.fillStyle = 'rgba(47,127,122,.8)'; g.fillRect(w/2, yb+1, (w/2-6)*b.bid_s[l]/mx, rh-2);
     label(g, b.ask_p[l].toFixed(2), 4, ya+rh-2, C.red); label(g, b.bid_p[l].toFixed(2), 4, yb+rh-2, C.teal);
+    if (w > 260) { label(g, String(+b.ask_s[l].toPrecision(3)), w-60, ya+rh-2, C.ink); label(g, String(+b.bid_s[l].toPrecision(3)), w-60, yb+rh-2, C.ink); }
   }
 }
 function telemetry(fr){
@@ -385,11 +399,12 @@ function telemetry(fr){
     <div class="row"><span>hit rate on calls</span><b>${pct(fr.hit_rate)}</b></div>
     <div class="row"><span>frozen-model error ÷ ours</span><b>${ratio? ratio.toFixed(2)+'×':'–'}</b></div>
     <div class="row"><span>alarms F / R</span><b>${fr.n_alarms_f} / ${fr.n_alarms_r}</b></div>
+    <div class="row"><span>rolling-KS alarms (baseline)</span><b style="color:#c0263a">${fr.n_alarms_ks ?? 0}</b></div>
     <div class="row"><span>horizon h</span><b>${fr.h} events</b></div>`;
 }
 function logbox(fr){
   $('log').innerHTML = fr.log.slice().reverse().map(e => {
-    const cls = e.msg.includes('MONITOR R')? 'a' : e.msg.includes('MONITOR F')? 'f' : e.msg.includes('SHOCK')? 's' : '';
+    const cls = e.msg.includes('MONITOR R')? 'a' : e.msg.includes('MONITOR F')? 'f' : (e.msg.includes('SHOCK')||e.msg.includes('RECURRENCE'))? 's' : e.msg.includes('rolling-KS')? 'k' : '';
     return `<div class="${cls}">[${e.wall}] ${e.msg}</div>`; }).join('');
 }
 function status(fr){
@@ -397,7 +412,14 @@ function status(fr){
   $('status-pill').classList.toggle('alarm', recent);
   $('status-text').textContent = recent ? 'ALARM — degrading loudly' : (fr.live ? 'LIVE · watching' : fr.phase);
   $('regime').textContent = fr.regime;
-  $('clockline').textContent = fr.clock ? `LOBSTER ${fr.source} · ${secToClock(fr.clock)}` : `${fr.source} · seed stream`;
+  $('clockline').textContent = fr.clock_text ? fr.clock_text : (fr.clock ? `LOBSTER ${fr.source} · ${secToClock(fr.clock)}` : `${fr.source} · seed stream`);
+  $('feedline').innerHTML = fr.feed ? `feed: <b style="color:${fr.feed.mode==='live'?'#2f7f7a':'#c0263a'}">${fr.feed.mode==='live'?'LIVE '+(fr.feed.host||''):'REPLAY of recording (feed '+fr.feed.status+')'}</b>` : '';
+  if (fr.dmg){ const mx=Math.max(fr.dmg.b1, fr.dmg.tw, 1e-9);
+    $('dmg-b1').style.width=(100*fr.dmg.b1/mx)+'%'; $('dmg-tw').style.width=(100*fr.dmg.tw/mx)+'%';
+    $('dmg-b1v').textContent=Math.round(fr.dmg.b1).toLocaleString(); $('dmg-twv').textContent=Math.round(fr.dmg.tw).toLocaleString();
+    $('dmg-n').textContent=`${fr.dmg.n.toLocaleString()} matured labels`;
+    $('dmg-ratio').innerHTML = fr.dmg.n>50 && fr.dmg.tw>0 ? `frozen model has taken <b>${(fr.dmg.b1/fr.dmg.tw).toFixed(2)}×</b> our damage` : 'waiting for labels to mature…';
+  } else { $('dmg-ratio').textContent='press a shock to start the meter'; ['dmg-b1','dmg-tw'].forEach(i=>$(i).style.width='0'); $('dmg-b1v').textContent=$('dmg-twv').textContent='–'; $('dmg-n').textContent=''; }
   if (recent && Date.now() > alarmUntil){ ['w-det','w-forecast','w-pool'].forEach(id=>{ const el=$(id); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash'); }); alarmUntil = Date.now()+1500; }
 }
 function secToClock(s){ const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), ss=Math.floor(s%60); return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}`; }
@@ -415,10 +437,25 @@ function connect(){
   };
   es.onerror = () => { $('status-text').textContent = 'engine offline — run python scripts/cockpit.py'; };
 }
-fetch('/sources').then(r=>r.json()).then(list => {
-  $('sources').innerHTML = list.map(s => `<button data-s="${s}" onclick="post({action:'source',value:'${s}'}).then(()=>{hist=[]; markSource('${s}')})">${s==='synthetic'?'SYNTHETIC':s+' (real)'}</button>`).join('');
-  markSource('synthetic');
+let SOURCES = ['synthetic'];
+function srcLabel(s){ return s==='synthetic' ? 'SYNTHETIC' : s==='BTC' ? 'BTC (live)' : s+' (real)'; }
+function pickSource(s){ post({action:'source',value:s}).then(()=>{ hist=[]; markSource(s); }); }
+fetch('/sources').then(r=>r.json()).then(js => {
+  SOURCES = js.sources || js;
+  $('sources').innerHTML = SOURCES.map(s => `<button data-s="${s}" onclick="pickSource('${s}')">${srcLabel(s)}</button>`).join('');
+  markSource(js.current || 'synthetic');
 }).catch(()=>{});
+// stage shortcuts: no mouse hunting in front of judges
+document.addEventListener('keydown', e => {
+  if (e.target && /INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) return;
+  const k = e.key.toLowerCase();
+  if (k==='1') shock('concept'); else if (k==='2') shock('covariate'); else if (k==='3') shock('coupled'); else if (k==='0') shock('calm');
+  else if (k===' ') { e.preventDefault(); post({action:'pause'}); }
+  else if (k==='r') post({action:'reset'});
+  else if (k==='s') { const cur=(last&&last.source)||'synthetic'; pickSource(SOURCES[(SOURCES.indexOf(cur)+1)%SOURCES.length]); }
+  else return;
+  const el=$('w-forecast'); el.classList.remove('flash'); void el.offsetWidth; el.classList.add('flash');
+});
 function markSource(s){ document.querySelectorAll('#sources button').forEach(b=>b.classList.toggle('on', b.dataset.s===s)); }
 
 // ------------------------------------------------------------------ evidence replays

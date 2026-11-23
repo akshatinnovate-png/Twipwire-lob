@@ -1,0 +1,127 @@
+{
+ "current (shipped)": {
+  "splices": 5,
+  "splice_delays": [
+   899,
+   2699,
+   null,
+   299,
+   99,
+   499,
+   null,
+   null,
+   null
+  ],
+  "null_f": [
+   0.5,
+   1.02,
+   1.33
+  ],
+  "null_r": [
+   0.34,
+   0.26,
+   0.95
+  ],
+  "covariate_delay": 609.0
+ },
+ "instant re-arm": {
+  "splices": 5,
+  "splice_delays": [
+   899,
+   3099,
+   null,
+   299,
+   99,
+   899,
+   null,
+   null,
+   null
+  ],
+  "null_f": [
+   0.67,
+   1.02,
+   1.99
+  ],
+  "null_r": [
+   0.34,
+   0.26,
+   0.76
+  ],
+  "covariate_delay": 609.0
+ },
+ "two-sided Monitor F": {
+  "splices": 4,
+  "splice_delays": [
+   899,
+   null,
+   null,
+   499,
+   99,
+   499,
+   null,
+   null,
+   null
+  ],
+  "null_f": [
+   0.5,
+   1.02,
+   1.8
+  ],
+  "null_r": [
+   0.34,
+   0.26,
+   0.76
+  ],
+  "covariate_delay": 809.0
+ },
+ "dual Monitor F, second at 100-event blocks": {
+  "splices": 7,
+  "splice_delays": [
+   699,
+   5799,
+   3699,
+   199,
+   99,
+   499,
+   null,
+   null,
+   6299
+  ],
+  "null_f": [
+   2.18,
+   2.04,
+   3.7
+  ],
+  "null_r": [
+   0.34,
+   0.26,
+   0.76
+  ],
+  "covariate_delay": 409.0
+ },
+ "dual Monitor F, second at 400-event blocks": {
+  "splices": 6,
+  "splice_delays": [
+   1099,
+   5699,
+   8899,
+   99,
+   99,
+   499,
+   null,
+   null,
+   null
+  ],
+  "null_f": [
+   0.5,
+   1.02,
+   2.27
+  ],
+  "null_r": [
+   0.34,
+   0.26,
+   0.76
+  ],
+  "covariate_delay": 809.0
+ }
+}

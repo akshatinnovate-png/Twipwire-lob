@@ -22,12 +22,16 @@ class TripwireConfig:
     rls_lambdas: Tuple[float, ...] = (0.998, 0.9995, 0.99995, 1.0)
     spawn_lambda: float = 0.999
     max_spawned: int = 4                    # K = 1 ridge + 4 RLS + 4 spawned = 9
-    spawn_window: int = 400                 # matured pairs used to warm-start a spawned expert
+    spawn_window: int = 400                 # matured pairs used to warm-start a spawned expert ...
+    spawn_from_changepoint: bool = False    # ... or, if True, the pairs since the estimated change point (clipped to [spawn_window_min, spawn_window_max])
+    spawn_window_min: int = 150
+    spawn_window_max: int = 2000
     spawn_prior_weight: float = 0.25
     fs_eta0: float = 0.3                    # fixed-share rate; per-label eta = fs_eta0 / horizon (labels overlap h-1 events)
     fs_alpha: float = 1e-4                  # base switching rate per matured label
     fs_alpha_boost: float = 0.02            # switching rate for `boost_events` after an R alarm
     boost_events: int = 100
+    fs_eta_boost: float = 1.0               # fixed-share learning-rate multiplier during the post-alarm boost
     loss_clip: float = 16.0                 # standardised squared loss is winsorised here
 
     # C. sequential detectors (conformal p-values -> Shiryaev-Roberts)
@@ -37,11 +41,14 @@ class TripwireConfig:
     min_ref: int = 120                      # block-scores needed before arming
     min_ref_rearm: int = 60                 # ... and before re-arming after an alarm
     stride_f: int = 200                     # block length for Monitor F (features carry slow components on real books)
-    stride_r: int = 0                       # block length for Monitor R; 0 -> max(50, 2h) (labels overlap by h-1 events)
+    stride_r: int = 0                       # block length for Monitor R; 0 -> max(30, 2h) (labels overlap by h-1 events)
     f_ref_size: int = 150                   # Monitor F reference / gap / arming sizes, in F-blocks
     f_ref_gap: int = 50
     f_min_ref: int = 40
     f_min_ref_rearm: int = 20
+    f_dual_stride: int = 0                  # >0: run a second Monitor F with this block length; each gets half the budget
+    f_two_sided: bool = False               # tested: two-sided novelty caught fewer splices (4/9) and slowed covariate detection
+    instant_rearm: bool = False             # tested: did not improve splice detection and raised MSFT null false alarms to 1.99x
     monitor_r_score: str = "orthogonality"  # "orthogonality": -(y-yhat)*yhat ; "abs": |y-yhat| (abstract v1)
     monitor_r_ref: str = "slow"             # forecast tested by Monitor R: "slow" = longest-memory RLS expert, "pool" = aggregate
     enable_f: bool = True
@@ -67,7 +74,7 @@ class TripwireConfig:
 
     def strides(self):
         sf = self.stride_f or self.horizon
-        sr = self.stride_r or max(50, 2 * self.horizon)
+        sr = self.stride_r or max(30, 2 * self.horizon)
         return sf, sr
 
     def thresholds(self):
