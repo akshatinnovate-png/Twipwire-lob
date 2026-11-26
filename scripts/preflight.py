@@ -10,8 +10,9 @@ import subprocess
 import sys
 import time
 
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-sys.path.insert(0, ROOT)
+CODE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+ROOT = os.environ.get("TRIPWIRE_HOME") or CODE   # writable: data/, results/
+sys.path.insert(0, CODE)
 ok = True
 
 
@@ -47,12 +48,13 @@ for s in ("AAPL", "AMZN", "MSFT"):
           "python scripts/fetch_lobster.py  then  python scripts/build_cache.py")
 for f in ("cockpit/index.html", "cockpit/replays.json", "cockpit/summary.json", "results/tables.md",
           "results/figures/recurrence.png"):
-    check(f"{f} present", os.path.exists(os.path.join(ROOT, f)), "python scripts/run_benchmarks.py")
+    check(f"{f} present", os.path.exists(os.path.join(CODE, f)), "python scripts/run_benchmarks.py")
 s = socket.socket()
 free = s.connect_ex(("127.0.0.1", 8765)) != 0
 s.close()
 check("port 8765 free for the cockpit", free, "another cockpit is running (fine) or use --port 8766")
-r = subprocess.run([sys.executable, "-m", "pytest", "-q", os.path.join(ROOT, "tests")], capture_output=True, text=True)
-check("unit tests pass: " + (r.stdout.strip().splitlines()[-1] if r.stdout.strip() else "?"), r.returncode == 0, r.stdout[-800:])
+if not getattr(sys, "frozen", False):
+    r = subprocess.run([sys.executable, "-m", "pytest", "-q", os.path.join(CODE, "tests")], capture_output=True, text=True)
+    check("unit tests pass: " + (r.stdout.strip().splitlines()[-1] if r.stdout.strip() else "?"), r.returncode == 0, r.stdout[-800:])
 print(f"\n{'READY' if ok else 'NOT READY'}  ({time.time()-t0:.0f}s).  Start the demo:  python demo.py")
 sys.exit(0 if ok else 1)

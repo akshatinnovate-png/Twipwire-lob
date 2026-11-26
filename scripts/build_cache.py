@@ -8,13 +8,14 @@ import os
 import sys
 import time
 
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-sys.path.insert(0, ROOT)
+CODE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+ROOT = os.environ.get("TRIPWIRE_HOME") or CODE   # writable: data/, results/
+sys.path.insert(0, CODE)
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from run_benchmarks import real_features  # noqa: E402
 
-if __name__ == "__main__":
+def main():
     os.makedirs(os.path.join(ROOT, "data", "cache"), exist_ok=True)
     for sym in ("AAPL", "AMZN", "MSFT"):
         for h in (50, 10):
@@ -22,3 +23,7 @@ if __name__ == "__main__":
             X, _, _ = real_features(sym, h)
             print(f"{sym} h={h}: {len(X):,} events cached in {time.time()-t0:.0f}s", flush=True)
     print("done -> data/cache/   (now run: python scripts/cockpit.py)")
+
+
+if __name__ == "__main__":
+    main()

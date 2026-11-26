@@ -25,8 +25,9 @@ from multiprocessing import Pool
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.join(HERE, "..")
-sys.path.insert(0, ROOT)
+CODE = os.path.join(HERE, "..")
+ROOT = os.environ.get("TRIPWIRE_HOME") or CODE   # writable: data/, results/
+sys.path.insert(0, CODE)
 sys.path.insert(0, HERE)
 
 from tripwire import FeatureExtractor, TripwireEngine  # noqa: E402

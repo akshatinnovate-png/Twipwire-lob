@@ -18,8 +18,9 @@ from multiprocessing import Pool
 
 import numpy as np
 
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-sys.path.insert(0, ROOT)
+CODE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+ROOT = os.environ.get("TRIPWIRE_HOME") or CODE   # writable: data/, results/
+sys.path.insert(0, CODE)
 
 from tripwire import TripwireConfig, TripwireEngine  # noqa: E402
 from tripwire.baselines import run_baselines  # noqa: E402

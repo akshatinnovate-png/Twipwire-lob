@@ -9,7 +9,7 @@ import os
 import sys
 import urllib.request
 
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "lobster")
+ROOT = os.path.join(os.environ.get("TRIPWIRE_HOME") or os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."), "data", "lobster")
 M = "https://media.githubusercontent.com/media"
 SRC = {
     "AAPL": f"{M}/satelliteprogrammer/trading-systems/beff0fca9d8b3946a954fcdf72a165d95ed75f3f/data/lobster",

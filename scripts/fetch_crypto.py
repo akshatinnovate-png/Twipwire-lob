@@ -17,7 +17,8 @@ import os
 import sys
 import urllib.request
 
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+CODE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+ROOT = os.environ.get("TRIPWIRE_HOME") or CODE   # writable: data/, results/
 BASE = "https://datasets.tardis.dev/v1"
 
 

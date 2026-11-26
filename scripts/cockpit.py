@@ -34,8 +34,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import numpy as np
 
-ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
-sys.path.insert(0, ROOT)
+CODE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+ROOT = os.environ.get("TRIPWIRE_HOME") or CODE   # writable: data/, results/
+sys.path.insert(0, CODE)
 
 from tripwire import FEATURE_NAMES, FeatureExtractor, TripwireConfig, TripwireEngine  # noqa: E402
 from tripwire.baselines import ks_crit, ks_stat  # noqa: E402
@@ -45,7 +46,7 @@ from tripwire.pool import ridge_fit  # noqa: E402
 from tripwire.synthetic import CALM, CONCEPT, COUPLED, COVARIATE, SyntheticBook  # noqa: E402
 
 REGIMES = {"calm": CALM, "concept": CONCEPT, "covariate": COVARIATE, "coupled": COUPLED}
-COCKPIT = os.path.join(ROOT, "cockpit")
+COCKPIT = os.path.join(CODE, "cockpit")
 PRETTY = {
     "ofi_l1": "order flow L1", "ofi_l2": "order flow L2", "ofi_l3": "order flow L3", "ofi_l4": "order flow L4",
     "ofi_l5": "order flow L5", "ofi_deep_6_10": "deep order flow", "microprice_minus_mid": "micro-price",
@@ -501,7 +502,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/summary.json":
             return self._file(os.path.join(COCKPIT, "summary.json"), "application/json")
         if path.startswith("/figures/"):
-            return self._file(os.path.join(ROOT, "results", "figures", os.path.basename(path)), "image/png")
+            return self._file(os.path.join(CODE, "results", "figures", os.path.basename(path)), "image/png")
         if path == "/sources":
             s = get_session()
             return self._send(200, json.dumps({"sources": available_sources(), "current": s.source if s else None,
