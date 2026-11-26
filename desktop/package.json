@@ -45,14 +45,16 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "TRIPWIRE-LOB-Setup-${version}.${ext}"
     },
     "mac": {
       "target": [
         "dmg"
       ],
       "category": "public.app-category.finance",
-      "identity": null
+      "identity": null,
+      "artifactName": "TRIPWIRE-LOB-${version}-mac-${arch}.${ext}"
     },
     "linux": {
       "target": [
@@ -62,7 +64,10 @@
       "category": "Office",
       "maintainer": "Team TM-BBAC6C06A8C"
     },
-    "publish": null
+    "publish": null,
+    "portable": {
+      "artifactName": "TRIPWIRE-LOB-Portable-${version}.${ext}"
+    }
   },
   "repository": {
     "type": "git",

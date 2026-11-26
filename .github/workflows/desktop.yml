@@ -44,7 +44,7 @@ jobs:
         with: { node-version: "20" }
       - name: Python backend (PyInstaller)
         run: |
-          pip install -r ../requirements.txt pyinstaller
+          pip install -r ../requirements.txt pyinstaller certifi
           pyinstaller --noconfirm --distpath backend-dist --workpath build-py tripwire.spec
       - name: Backend smoke test
         shell: bash
@@ -79,5 +79,5 @@ jobs:
           files: dist/*
           body: |
             TRIPWIRE-LOB desktop app. Paper trading only: no order ever leaves your machine.
-            Windows: the -setup .exe installs, the other .exe runs portable. macOS: unsigned .dmg (right-click > Open the first time).
+            Windows: TRIPWIRE-LOB-Setup installs; TRIPWIRE-LOB-Portable runs without installing (unsigned: More info > Run anyway). macOS: unsigned .dmg (right-click > Open the first time).
             Linux: AppImage (chmod +x) or .deb. Data and results go to Documents/TripwireLOB.

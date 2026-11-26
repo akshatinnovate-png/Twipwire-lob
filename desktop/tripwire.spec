@@ -9,6 +9,11 @@ datas = [
     (os.path.join(REPO, "cockpit"), "cockpit"),
     (os.path.join(REPO, "data", "events.csv"), "data"),
 ]
+try:                                    # CA bundle so live market connections verify on every OS
+    import certifi
+    datas.append((certifi.where(), "certifi"))
+except ImportError:
+    pass
 for sub in ("figures",):
     p = os.path.join(REPO, "results", sub)
     if os.path.isdir(p):
@@ -20,7 +25,7 @@ for f in ("tables.md",):
 
 hidden = ["cockpit", "paper_desk", "track_record", "record_binance", "fetch_lobster", "fetch_crypto", "build_cache",
           "run_benchmarks", "desk_benchmarks", "crypto_benchmarks", "preflight", "report", "splice_study",
-          "matplotlib.backends.backend_agg"]
+          "matplotlib.backends.backend_agg", "certifi"]
 
 a = Analysis(
     [os.path.join(REPO, "tripwire_cli.py")],

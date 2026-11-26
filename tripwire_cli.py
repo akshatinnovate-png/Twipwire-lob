@@ -32,6 +32,17 @@ sys.path.insert(0, CODE)
 sys.path.insert(0, os.path.join(CODE, "scripts"))
 
 
+def _ssl_certs():
+    """Bundled Python may not find the OS certificate store (macOS especially): use certifi's."""
+    if os.environ.get("SSL_CERT_FILE"):
+        return
+    try:
+        import certifi
+        os.environ["SSL_CERT_FILE"] = certifi.where()
+    except ImportError:
+        pass
+
+
 def _set_home(home):
     if home:
         os.environ["TRIPWIRE_HOME"] = os.path.abspath(home)
@@ -158,6 +169,7 @@ def main(argv=None):
     sub.add_parser("preflight", help="stage checklist").set_defaults(fn=cmd_preflight)
     sub.add_parser("home", help="print the data folder").set_defaults(fn=lambda a: print(os.environ.get("TRIPWIRE_HOME") or CODE))
     a = ap.parse_args(argv)
+    _ssl_certs()
     _set_home(a.home)
     a.fn(a)
 
