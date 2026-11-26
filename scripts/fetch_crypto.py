@@ -17,7 +17,7 @@ import os
 import sys
 import urllib.request
 
-CODE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+CODE = getattr(sys, "_MEIPASS", None) or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")   # bundle root when frozen
 ROOT = os.environ.get("TRIPWIRE_HOME") or CODE   # writable: data/, results/
 BASE = "https://datasets.tardis.dev/v1"
 

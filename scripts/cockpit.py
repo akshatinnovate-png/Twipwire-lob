@@ -34,7 +34,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import numpy as np
 
-CODE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+CODE = getattr(sys, "_MEIPASS", None) or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")   # bundle root when frozen
 ROOT = os.environ.get("TRIPWIRE_HOME") or CODE   # writable: data/, results/
 sys.path.insert(0, CODE)
 

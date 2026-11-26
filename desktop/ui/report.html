@@ -1,0 +1,39 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Track record</title>
+<style>
+  html,body{margin:0;background:#f4f1f2;color:#231c1f;font-family:ui-monospace,Menlo,Consolas,monospace}
+  main{max-width:1040px;margin:0 auto;padding:24px 16px 60px}
+  h1{font-family:Impact,'Arial Black',sans-serif;font-size:48px;line-height:.95;margin:0 0 12px}
+  h2{border-bottom:3px solid #231c1f;padding-bottom:4px;margin-top:34px}
+  table{border-collapse:collapse;width:100%;font-size:12px;margin:10px 0;display:block;overflow-x:auto}
+  th,td{border:1px solid #231c1f;padding:4px 6px;text-align:right;white-space:nowrap}
+  th:first-child,td:first-child,th:nth-child(2),td:nth-child(2){text-align:left}
+  th{background:#231c1f;color:#f4f1f2}
+  blockquote{margin:10px 0;padding:8px 12px;background:#f2879f;border:2px solid #231c1f}
+  img{max-width:100%;border:2px solid #231c1f;margin:8px 0}
+  p{line-height:1.5}
+</style></head>
+<body><main id="m">loading…</main>
+<script>
+  const q = new URLSearchParams(location.search), dir = q.get('dir');
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const inline = s => esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/\*(.+?)\*/g,'<i>$1</i>').replace(/`(.+?)`/g,'<code>$1</code>');
+  function render(md){
+    const L = md.split('\n'); let h = '', i = 0;
+    while (i < L.length){
+      const l = L[i];
+      if (/^\|/.test(l)){ const rows=[]; while(i<L.length && /^\|/.test(L[i])) rows.push(L[i++]);
+        const cells = r => r.replace(/^\||\|$/g,'').split('|').map(c=>c.trim());
+        h += '<table><tr>' + cells(rows[0]).map(c=>'<th>'+inline(c)+'</th>').join('') + '</tr>' +
+             rows.slice(2).map(r=>'<tr>'+cells(r).map(c=>'<td>'+inline(c)+'</td>').join('')+'</tr>').join('') + '</table>'; continue; }
+      let m;
+      if ((m = l.match(/^(#{1,3}) (.*)/))) h += `<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`;
+      else if ((m = l.match(/^!\[(.*?)\]\((.*?)\)/))) h += `<img alt="${esc(m[1])}" src="file://${encodeURI(dir + '/' + m[2])}">`;
+      else if (/^> /.test(l)) h += '<blockquote>' + inline(l.slice(2)) + '</blockquote>';
+      else if (l.trim()) h += '<p>' + inline(l) + '</p>';
+      i++;
+    }
+    return h;
+  }
+  tripwire.readText(q.get('md')).then(md => { document.getElementById('m').innerHTML = md ? render(md) : 'No report yet.'; });
+</script></body></html>

@@ -21,7 +21,7 @@ import sys
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-CODE = os.path.join(HERE, "..")
+CODE = getattr(sys, "_MEIPASS", None) or os.path.join(HERE, "..")   # bundle root when frozen
 ROOT = os.environ.get("TRIPWIRE_HOME") or CODE   # writable: data/, results/
 sys.path.insert(0, CODE)
 sys.path.insert(0, HERE)

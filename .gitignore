@@ -8,3 +8,7 @@ scratch_*.py
 results/run_log.txt
 results/splice_study_log.txt
 !data/events.csv
+desktop/node_modules/
+desktop/backend-dist/
+desktop/build-py/
+desktop/release/

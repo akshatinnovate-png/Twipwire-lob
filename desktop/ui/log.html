@@ -1,0 +1,29 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Job</title>
+<style>
+  html,body{margin:0;height:100%;background:#f4f1f2;font-family:ui-monospace,Menlo,Consolas,monospace;color:#231c1f}
+  .title{background:#231c1f;color:#f4f1f2;padding:6px 10px;display:flex;justify-content:space-between;align-items:center}
+  .title b{letter-spacing:.5px}
+  .st{font-size:12px;padding:2px 8px;border:1px solid #f4f1f2}
+  .st.run{background:#2f7f7a}.st.ok{background:#231c1f}.st.bad{background:#c0263a}
+  pre{margin:0;padding:12px;white-space:pre-wrap;word-break:break-word;font-size:12px;height:calc(100% - 82px);overflow:auto;background:#231c1f;color:#f2879f;border-top:3px solid #f2879f}
+  .bar{display:flex;gap:8px;padding:8px 10px;border-top:2px solid #231c1f}
+  button{font:inherit;background:#f4f1f2;border:2px solid #231c1f;box-shadow:3px 3px 0 #231c1f;padding:4px 10px;cursor:pointer}
+  button:active{transform:translate(2px,2px);box-shadow:1px 1px 0 #231c1f}
+  .note{font-size:11px;align-self:center;opacity:.8}
+</style></head>
+<body>
+<div class="title"><b id="name">job</b><span class="st run" id="st">RUNNING</span></div>
+<pre id="out"></pre>
+<div class="bar"><button id="stop">■ stop</button><button onclick="tripwire.openHome('results')">open results folder</button><button onclick="tripwire.openHome('data')">open data folder</button>
+  <span class="note" id="note"></span></div>
+<script>
+  const q = new URLSearchParams(location.search), name = q.get('name');
+  document.getElementById('name').textContent = name; document.title = name;
+  if (q.get('long')) document.getElementById('note').textContent = 'Long-running: closing this window keeps it running; stop it here or from the menu.';
+  const out = document.getElementById('out');
+  tripwire.onLog(s => { const atEnd = out.scrollTop + out.clientHeight >= out.scrollHeight - 20; out.textContent += s;
+    if (out.textContent.length > 400000) out.textContent = out.textContent.slice(-300000); if (atEnd) out.scrollTop = out.scrollHeight; });
+  tripwire.onDone(code => { const st = document.getElementById('st'); st.className = 'st ' + (code === 0 ? 'ok' : 'bad'); st.textContent = code === 0 ? 'DONE' : 'STOPPED (' + code + ')'; });
+  document.getElementById('stop').onclick = () => tripwire.stopJob(name);
+</script></body></html>

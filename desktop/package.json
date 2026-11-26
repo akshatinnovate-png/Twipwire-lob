@@ -1,0 +1,71 @@
+{
+  "name": "tripwire-lob",
+  "productName": "TRIPWIRE-LOB",
+  "version": "1.0.0",
+  "description": "Model-risk guard for order-book trading models: live cockpit, paper market-making desk, track record.",
+  "main": "main.js",
+  "author": "Team TM-BBAC6C06A8C",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "backend": "pyinstaller --noconfirm --distpath backend-dist --workpath build-py tripwire.spec",
+    "dist": "electron-builder --publish never"
+  },
+  "devDependencies": {
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "lob.tripwire.desktop",
+    "productName": "TRIPWIRE-LOB",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "ui/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "backend-dist/tripwire",
+        "to": "backend",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "artifactName": "TRIPWIRE-LOB-${version}-${os}-${arch}.${ext}",
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.finance",
+      "identity": null
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Office",
+      "maintainer": "Team TM-BBAC6C06A8C"
+    },
+    "publish": null
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/akshatinnovate-png/Twipwire-lob.git"
+  }
+}

@@ -40,6 +40,10 @@ def _set_home(home):
     h = os.environ.get("TRIPWIRE_HOME") or CODE
     for sub in ("data", "results"):
         os.makedirs(os.path.join(h, sub), exist_ok=True)
+    cal_src, cal_dst = os.path.join(CODE, "data", "events.csv"), os.path.join(h, "data", "events.csv")
+    if os.path.exists(cal_src) and not os.path.exists(cal_dst):
+        import shutil
+        shutil.copy(cal_src, cal_dst)                      # editable copy of the events calendar
     return h
 
 
