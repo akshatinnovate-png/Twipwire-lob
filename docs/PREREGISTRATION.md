@@ -70,3 +70,6 @@ Bugs may be fixed. Any change is logged here with its date, the reason, and whet
    The forecasting benchmark injects a break into the *labels*, then rebuilds a level series as h interleaved chains (`level[t+h] = level[t] + y[t]`). That is valid for scoring forecasts but is **not a price path**: neighbouring events sit on different chains, so the shifted book jumps by hundreds of ticks between events. On the first slice tested this produced ~1,700 spurious fills and a −$11k loss for *every* desk, including the neutral one.
    The fix injects the same reversed-and-tripled signal into the price path itself: from τ on, each event's mid move gets (β−1)/h times the signal of the last h events, so the h-event-ahead move carries (β−1) × signal, as in our synthetic generator. Prices are rounded cumulatively to whole ticks.
    Desks, settings, metrics and pass criteria are unchanged.
+2. **2026-11-26, bug fix in the latency model (no full-benchmark results seen; the first run was stopped).**
+   A quote re-decided while its previous version was still in flight restarted the in-flight timer. With latency longer than the gap between book events, quotes could never reach the market. Found by the live paper-desk test.
+   In-flight quote messages are now queued per side and applied in order as each one's latency elapses, as an order gateway does.
