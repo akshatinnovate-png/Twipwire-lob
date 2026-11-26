@@ -324,6 +324,7 @@ def main():
     seeds = 3 if a.quick else a.seeds
     os.makedirs(os.path.join(RES, "figures"), exist_ok=True)
     os.makedirs(os.path.join(ROOT, "data", "cache"), exist_ok=True)
+    os.makedirs(os.path.join(ROOT, "cockpit"), exist_ok=True)
     have_real = os.path.exists(os.path.join(ROOT, "data", "lobster", "AAPL_2012-06-21_34200000_57600000_orderbook_10.csv"))
     if not have_real and not a.skip_real:
         print("LOBSTER files missing -> run scripts/fetch_lobster.py (skipping real-data experiments)")

@@ -87,9 +87,12 @@ def cmd_serve(a):
 
 def cmd_paper(a):
     import paper_desk
+    sys.argv = ["paper_desk"]
     argv = ["--symbols", a.symbols]
     if a.minutes:
         argv += ["--minutes", str(a.minutes)]
+    if a.hosts:
+        argv += ["--hosts", a.hosts]
     paper_desk.main(argv)
 
 
@@ -123,6 +126,7 @@ def cmd_cache(a):
 def cmd_bench(a):
     if a.what == "desk":
         import desk_benchmarks
+        sys.argv = ["desk_benchmarks"]
         desk_benchmarks.main()
     elif a.what == "crypto":
         import crypto_benchmarks
@@ -152,6 +156,7 @@ def main(argv=None):
     s = sub.add_parser("paper", help="live paper desk on Binance books")
     s.add_argument("--symbols", default="BTCUSDT,ETHUSDT")
     s.add_argument("--minutes", type=float, default=0)
+    s.add_argument("--hosts", default=None, help="comma-separated feed hosts (default: Binance public hosts)")
     s.set_defaults(fn=cmd_paper)
     sub.add_parser("report", help="paper-desk track record").set_defaults(fn=cmd_report)
     s = sub.add_parser("record", help="record the live BTC book")
