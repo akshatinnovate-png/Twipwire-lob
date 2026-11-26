@@ -28,6 +28,7 @@ def load_lobster(orderbook_csv: str, message_csv: Optional[str] = None,
     bsz = ob[:, 3::4][:, :levels].copy()
     keep = np.ones(ob.shape[0], dtype=bool)
     times = np.arange(ob.shape[0], dtype=float)
+    msg = None
     if message_csv:
         msg = np.loadtxt(message_csv, delimiter=",", dtype=np.float64)
         times = msg[:, 0]
@@ -41,6 +42,11 @@ def load_lobster(orderbook_csv: str, message_csv: Optional[str] = None,
             side_s[fix, l] = 0.0
     keep &= (ap[:, 0] > bp[:, 0]) & (np.abs(ap[:, 0]) < 1e5) & (bp[:, 0] > 0)
     out = dict(bid_p=bp[keep], bid_s=bsz[keep], ask_p=ap[keep], ask_s=asz[keep], time=times[keep])
+    if msg is not None:
+        # the message that produced each book row (row i = book AFTER message i):
+        # type 1 submit, 2 partial cancel, 3 delete, 4 visible execution; direction +1 = buy order
+        out.update(msg_type=msg[keep, 1].astype(np.int8), msg_size=msg[keep, 3],
+                   msg_price=msg[keep, 4] / 1e4, msg_dir=msg[keep, 5].astype(np.int8))
     if cache:
         os.makedirs(os.path.dirname(cache) or ".", exist_ok=True)
         np.savez_compressed(cache, **out)

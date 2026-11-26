@@ -25,15 +25,18 @@ def main():
     ap.add_argument("--minutes", type=float, default=60)
     ap.add_argument("--interval", type=float, default=0.25)
     ap.add_argument("--hosts", default="data-api.binance.vision,api.binance.com,api1.binance.com,api.binance.us")
-    ap.add_argument("--out", default=f"data/btc/btcusdt_{time.strftime('%Y%m%d_%H%M')}.csv")
+    ap.add_argument("--out", default=None, help="default data/btc/<symbol>_<date>.csv (the cockpit's BTC source reads btcusdt_*)")
     a = ap.parse_args()
+    a.out = a.out or f"data/btc/{a.symbol.lower()}_{time.strftime('%Y%m%d_%H%M')}.csv"
     os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
     hosts = [h if h.startswith("http") else f"https://{h}" for h in a.hosts.split(",")]
     hi = 0
     end = time.time() + 60 * a.minutes
     last = None
     n = 0
-    with open(a.out, "w") as f, open(a.out.replace(".csv", "_times.csv"), "w") as ft:
+    last_tid = None
+    with open(a.out, "w") as f, open(a.out.replace(".csv", "_times.csv"), "w") as ft, \
+            open(a.out.replace(".csv", "_trades.csv"), "w") as fr:
       try:
         while time.time() < end:
             t0 = time.time()
@@ -46,6 +49,15 @@ def main():
                     ap_, as_ = book["asks"][l]
                     bp_, bs_ = book["bids"][l]
                     row += [round(float(ap_) * 1e4), float(as_), round(float(bp_) * 1e4), float(bs_)]
+                # trades since the last poll (aggressor side: m = buyer is maker -> seller aggressed)
+                tq = f"{hosts[hi % len(hosts)]}/api/v3/aggTrades?symbol={a.symbol}&limit=1000" + (f"&fromId={last_tid + 1}" if last_tid is not None else "")
+                with urllib.request.urlopen(tq, timeout=5) as r:
+                    for tr in json.load(r):
+                        if last_tid is not None and tr["a"] <= last_tid:
+                            continue
+                        if last_tid is not None:
+                            fr.write(f"{tr['T'] / 1000:.3f},{tr['p']},{tr['q']},{1 if tr['m'] else 0}\n")
+                        last_tid = tr["a"]
                 if row != last:
                     f.write(",".join(str(v) for v in row) + "\n")
                     ft.write(f"{t0:.3f}\n")
@@ -54,6 +66,7 @@ def main():
                     if n % 100 == 0:
                         f.flush()
                         ft.flush()
+                        fr.flush()
                     if n % 500 == 0:
                         print(f"  {n} book events recorded", flush=True)
             except Exception as e:  # keep recording through transient errors; try the next host

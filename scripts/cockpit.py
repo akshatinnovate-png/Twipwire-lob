@@ -66,7 +66,8 @@ def btc_recordings():
 
 
 def btc_recordings_ok():
-    return [p for p in btc_recordings() if not p.endswith("_times.csv")]
+    return [p for p in btc_recordings() if os.path.basename(p).startswith("btcusdt")
+            and not p.endswith(("_times.csv", "_trades.csv"))]
 
 
 class Session:

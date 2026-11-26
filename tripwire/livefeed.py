@@ -40,7 +40,7 @@ def parse_depth(js) -> tuple:
 
 class BookFeed:
     def __init__(self, symbol: str = "BTCUSDT", interval: float = 0.2,
-                 hosts: Optional[List[str]] = None, timeout: float = 3.0):
+                 hosts: Optional[List[str]] = None, timeout: float = 3.0, trades: bool = False):
         self.symbol = symbol
         self.interval = interval
         self.hosts = list(hosts or DEFAULT_HOSTS)
@@ -53,6 +53,9 @@ class BookFeed:
         self.n_events = 0
         self._stop = threading.Event()
         self._last = None
+        self.trades = trades
+        self._last_trade_id = None
+        self._pending_trades = []
         self._thread = threading.Thread(target=self._run, daemon=True)
 
     def start(self):
@@ -67,6 +70,26 @@ class BookFeed:
         with urllib.request.urlopen(url, timeout=self.timeout) as r:
             return json.load(r)
 
+    def _fetch_trades(self, host):
+        """Aggregated trades since the last seen id: (ts_s, price, qty, aggressor_is_seller)."""
+        q = f"{host}/api/v3/aggTrades?symbol={self.symbol}&limit=1000"
+        if self._last_trade_id is not None:
+            q += f"&fromId={self._last_trade_id + 1}"
+        else:
+            q = f"{host}/api/v3/aggTrades?symbol={self.symbol}&limit=1"
+        with urllib.request.urlopen(q, timeout=self.timeout) as r:
+            rows = json.load(r)
+        out = []
+        for a in rows:
+            if self._last_trade_id is not None and a["a"] <= self._last_trade_id:
+                continue
+            out.append((a["T"] / 1000.0, float(a["p"]), float(a["q"]), bool(a["m"])))
+            self._last_trade_id = a["a"]
+        if self._last_trade_id is None and rows:
+            self._last_trade_id = rows[-1]["a"]
+            return []
+        return out
+
     def _run(self):
         hi = 0
         fails = 0
@@ -75,11 +98,14 @@ class BookFeed:
             host = self.hosts[hi % len(self.hosts)]
             try:
                 book = parse_depth(self._fetch(host))
+                if self.trades:
+                    self._pending_trades += self._fetch_trades(host)
                 key = tuple(np.concatenate(book).round(8))
                 if key != self._last:
                     self._last = key
+                    trades, self._pending_trades = self._pending_trades, []
                     try:
-                        self.q.put_nowait(book)
+                        self.q.put_nowait((book, time.time(), trades) if self.trades else book)
                         self.n_events += 1
                     except queue.Full:
                         pass

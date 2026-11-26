@@ -50,7 +50,7 @@ class TripwireConfig:
     f_two_sided: bool = False               # tested: two-sided novelty caught fewer splices (4/9) and slowed covariate detection
     instant_rearm: bool = False             # tested: did not improve splice detection and raised MSFT null false alarms to 1.99x
     monitor_r_score: str = "orthogonality"  # "orthogonality": -(y-yhat)*yhat ; "abs": |y-yhat| (abstract v1)
-    monitor_r_ref: str = "slow"             # forecast tested by Monitor R: "slow" = longest-memory RLS expert, "pool" = aggregate
+    monitor_r_ref: str = "slow"             # forecast tested by Monitor R: "slow" = longest-memory RLS expert, "pool" = aggregate, "external" = a guarded desk model passed as f_ext
     enable_f: bool = True
     enable_r: bool = True
     scale_halflife: int = 3000              # EWMA half-life for volatility normalisation of the R score

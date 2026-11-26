@@ -43,6 +43,7 @@ class TripwireEngine:
         self.buf_yhat = np.zeros(self.L)
         self.buf_q = np.zeros(self.L)
         self.buf_level = np.zeros(self.L)
+        self.buf_ext = np.zeros(self.L)            # an external (desk) model's forecast, when guarded
         self.fit_X = []
         self.fit_level = []
         self.fitted = False
@@ -113,7 +114,8 @@ class TripwireEngine:
         self.fit_X = None
 
     # ------------------------------------------------------------------ step
-    def step(self, x_raw: np.ndarray, mid: float, spread: float, level: Optional[float] = None) -> np.ndarray:
+    def step(self, x_raw: np.ndarray, mid: float, spread: float, level: Optional[float] = None,
+             f_ext: Optional[float] = None) -> np.ndarray:
         """Process one book event. `level` is the series being forecast
         (defaults to mid, in ticks). Returns self.out (see OUT_FIELDS)."""
         c = self.cfg
@@ -162,7 +164,12 @@ class TripwireEngine:
             else:
                 # orthogonality: a calibrated least-squares forecaster has E[(y - f) f] = 0.
                 # A harmful concept shift makes the errors anti-aligned with the forecast.
-                f = preds_old[self.ref_slot] if c.monitor_r_ref == "slow" else yhat_old
+                if c.monitor_r_ref == "external":
+                    f = self.buf_ext[j]                  # guard someone else's model
+                elif c.monitor_r_ref == "slow":
+                    f = preds_old[self.ref_slot]
+                else:
+                    f = yhat_old
                 self.var_f += self.a_scale * (f * f - self.var_f)
                 score = -((y - f) * f) / (sy * math.sqrt(self.var_f) + 1e-12)
             if self.mon_r.update(score):
@@ -228,6 +235,7 @@ class TripwireEngine:
         self.buf_yhat[ptr] = yhat
         self.buf_q[ptr] = q
         self.buf_level[ptr] = lvl
+        self.buf_ext[ptr] = 0.0 if f_ext is None else float(f_ext)
 
         out[0] = yhat
         out[1] = q
@@ -243,7 +251,8 @@ class TripwireEngine:
 
     # ------------------------------------------------------------------ batch
     def run(self, X: np.ndarray, mid: np.ndarray, spread: np.ndarray,
-            level: Optional[np.ndarray] = None, record_weights: bool = True) -> Dict[str, np.ndarray]:
+            level: Optional[np.ndarray] = None, record_weights: bool = True,
+            f_ext: Optional[np.ndarray] = None) -> Dict[str, np.ndarray]:
         T = X.shape[0]
         res = np.zeros((T, len(OUT_FIELDS)))
         W = np.zeros((T, self.pool.K)) if record_weights else None
@@ -252,7 +261,7 @@ class TripwireEngine:
         pc = time.perf_counter_ns
         for t in range(T):
             t0 = pc()
-            o = self.step(X[t], mid[t], spread[t], lv[t])
+            o = self.step(X[t], mid[t], spread[t], lv[t], None if f_ext is None else f_ext[t])
             lat[t] = (pc() - t0) * 1e-3
             res[t] = o
             if W is not None:
