@@ -1,7 +1,7 @@
 {
   "name": "tripwire-lob",
   "productName": "TRIPWIRE-LOB",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Model-risk guard for order-book trading models: live cockpit, paper market-making desk, track record.",
   "main": "main.js",
   "author": "Team TM-BBAC6C06A8C",
