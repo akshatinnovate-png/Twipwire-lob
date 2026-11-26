@@ -40,6 +40,7 @@ sys.path.insert(0, ROOT)
 from tripwire import FEATURE_NAMES, FeatureExtractor, TripwireConfig, TripwireEngine  # noqa: E402
 from tripwire.baselines import ks_crit, ks_stat  # noqa: E402
 from tripwire.lobster import load_lobster  # noqa: E402
+from tripwire.minidesk import DESKS, MiniDesks  # noqa: E402
 from tripwire.pool import ridge_fit  # noqa: E402
 from tripwire.synthetic import CALM, CONCEPT, COUPLED, COVARIATE, SyntheticBook  # noqa: E402
 
@@ -140,6 +141,10 @@ class Session:
         self.dmg_b1 = 0.0
         self.dmg_n = 0
         self.prev_w = None
+        # desk view: the frozen model quoted by three desks (S0 neutral, S1 always-on, S2 guarded)
+        self.desk = MiniDesks(self.h)
+        self.desk_base = {d: 0.0 for d in DESKS}
+        self.desk_state = "TRUST"
 
     # ---------------------------------------------------------------- BTC (live)
     def _setup_btc(self):
@@ -228,6 +233,8 @@ class Session:
             self.shock_t = self.t
             self.dmg_tw = self.dmg_b1 = 0.0
             self.dmg_n = 0
+            lv = self.desk.pnl_hist[-1] if self.desk.pnl_hist else [0.0] * len(DESKS)
+            self.desk_base = dict(zip(DESKS, lv))
             if self.source == "synthetic":
                 self.gen.regime = REGIMES[kind]
                 self.regime = kind
@@ -328,7 +335,9 @@ class Session:
                 self.lat.append(lat)
             ks = self._ks_step(x)
             yhat, q, call = float(o[0]), float(o[1]), float(o[2])
-            self.pending.append((self.t - 1, level, yhat, q, call, float(eng.buf_preds[(self.t - 1) % eng.L][0]) if eng.fitted else 0.0))
+            b1_now = float(eng.buf_preds[(self.t - 1) % eng.L][0]) if eng.fitted else 0.0
+            self.pending.append((self.t - 1, level, yhat, q, call, b1_now))
+            y_m = f_m = None
             while self.pending and self.pending[0][0] <= self.t - 1 - self.h:
                 t_old, lv_old, yh_old, q_old, c_old, b1_old = self.pending.popleft()
                 if t_old >= (eng.t_live or 10**12):
@@ -339,10 +348,16 @@ class Session:
                         self.hit_win.append(1.0 if (y > 0) == (c_old > 0) else 0.0)
                     self.err_tw.append((y - yh_old) ** 2)
                     self.err_b1.append((y - b1_old) ** 2)
+                    y_m, f_m = y, b1_old
                     if self.shock_t is not None and t_old >= self.shock_t:
                         self.dmg_tw += (y - yh_old) ** 2
                         self.dmg_b1 += (y - b1_old) ** 2
                         self.dmg_n += 1
+            if live:
+                g = self.desk.step(level, spr, b1_now, bool(o[5]), bool(o[6]), y_m, f_m, live=True)
+                if g["state"] != self.desk_state:
+                    self.event(f"DESK GUARD {self.desk_state} -> {g['state']} at event {self.t}: {g['reason']}")
+                    self.desk_state = g["state"]
             if o[5]:
                 self.event(f"MONITOR F ALARM at event {self.t}: the book looks different (top movers: {self._explain_f()}) (evidence crossed A = {eng.mon_f.A:,.0f}) -> interval x{self.cfg.f_inflation}, model untouched")
             if o[6]:
@@ -381,6 +396,7 @@ class Session:
             "n_alarms_f": len(eng.alarms_f), "n_alarms_r": len(eng.alarms_r), "spawns": eng.pool.spawn_count,
             "n_alarms_ks": self.ks_alarms,
             "dmg": None if self.shock_t is None else {"tw": round(self.dmg_tw, 1), "b1": round(self.dmg_b1, 1), "n": self.dmg_n},
+            "desk": self._desk_frame(rows[-1][1]),
             "log": list(self.log)[-14:], "speed": self.speed, "paused": self.paused,
         }
         if self.book is not None:
@@ -395,6 +411,13 @@ class Session:
             ii = min(max(self.i - 1, 0), len(self.time) - 1)
             fr["clock"] = float(self.time[ii])
         return fr
+
+    def _desk_frame(self, level):
+        snap = self.desk.snapshot(level)
+        for d in DESKS:
+            snap["desks"][d]["since_shock"] = round(snap["desks"][d]["pnl"] - self.desk_base[d], 1)
+        snap["pnl"] = list(self.desk.pnl_hist)[-1] if self.desk.pnl_hist else None
+        return snap
 
     def run_forever(self):
         tick = 0.05

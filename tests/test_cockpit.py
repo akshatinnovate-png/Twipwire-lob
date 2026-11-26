@@ -141,3 +141,17 @@ def test_btc_source_warm_start_live_and_fallback(tmp_path, monkeypatch):
         assert s.t > t1
     finally:
         s.close()
+
+
+def test_desk_view_guard_saves_money_after_concept_flip():
+    import cockpit
+    s = cockpit.Session("synthetic", seed=1)
+    for _ in range(25):
+        s.advance(1000)
+    s.shock("concept")
+    for _ in range(10):
+        rows = s.advance(1000)
+    fr = s._desk_frame(rows[-1][1])
+    assert fr["state"] in ("DISTRUST", "RESTORE")
+    assert fr["desks"]["S2"]["since_shock"] > fr["desks"]["S1"]["since_shock"]
+    json.dumps(fr)
