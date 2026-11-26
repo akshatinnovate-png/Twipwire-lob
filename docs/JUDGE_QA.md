@@ -71,4 +71,33 @@ p50 ≈ 70 µs and p99 ≤ 200 µs per book event on one core, in pure Python an
 The pieces are published (conformal martingales, Shiryaev–Roberts, fixed-share, ACI). The contributions are: the combination with explicit delayed-label handling; the orthogonality score for concept monitoring at low R², which works where the textbook residual monitor fails; the pairing of a label-free and a label-aware monitor that separates harmless from harmful shifts; and two evaluation measures, cost of delay and silent-failure time, plus an injected-shift protocol on real data with P(X) fixed by construction.
 
 **Q20. Can everything be reproduced?**
-Yes. Run `python scripts/run_benchmarks.py` (about 25 minutes on 4 cores) and `python -m pytest -q` (10 tests). Seeds are fixed. The tables, figures and cockpit numbers are all generated from `results/benchmarks.json`.
+Yes. Run `python scripts/run_benchmarks.py` (about 25 minutes on 4 cores) and `python -m pytest -q` (31 tests); the desk test is `python scripts/desk_benchmarks.py` (about 5 minutes). Seeds are fixed. The tables, figures and cockpit numbers are all generated from `results/benchmarks.json`.
+
+## The desk use case
+
+**Q21. Who would actually use this?**
+Any desk whose quotes or hedges lean on a short-term model: a market maker, an execution algorithm, a hedging book. TRIPWIRE does not replace their model. It sits beside it and answers one question on every book event: should we still believe it? The answer is a decision record (skew, width, size, inventory multipliers) that the quoting engine applies. It can only reduce risk, never add it. `docs/INTEGRATION.md` gives the interface, the fail-safes and the latency.
+
+**Q22. Did it work? What failed?**
+We registered four hypotheses before running anything (`docs/PREREGISTRATION.md`, with git timestamps). Three passed:
+* H1: the guard costs nothing on normal days; the guarded desk beat always-on on 3/3 days.
+* H2a: adverse selection after a break was 48 % lower; the bar was 30 %.
+* H3: the guard beat the KS guard and a drawdown stop.
+
+H2b failed: the guarded desk won 8 of 12 break slices, and the bar was 9. In the 3 slices it lost without any Monitor R alarm, it gave up at most 1.7k $; it lost one more where the alarm came late. Wherever Monitor R fired within 450 events, the guarded desk won. That makes it a detection-power limit, not a wrong reaction.
+
+**Q23. Your desk model has negative R². Isn't that rigged?**
+We fixed the model in advance (a small MLP trained on the first 20,000 events, then frozen) and did not tune it. Its poor out-of-sample performance on real days is exactly the failure the guard exists for: a model that stops working without telling anyone. We state openly that this makes H1 easier. The post-break tests (H2, H3) compare desks that use the same model, so the guard's effect is isolated there.
+
+**Q24. Why is the KS guard identical to the neutral desk?**
+Rolling KS on dependent order-book features alarms almost continuously (18 alarms per 50k calm events in our benchmark), so a KS-gated desk switches its model off nearly all the time. It never loses to always-on, but it never earns from the model either. That is the cost of having no false-alarm control.
+
+**Q25. What about real money and real breaks, not injected ones?**
+There are two forward tests that we cannot cherry-pick:
+* (1) Historical crypto books with real volatility breaks found by an offline change-point method (`scripts/crypto_benchmarks.py`).
+* (2) A live paper desk on BTC-USDT and ETH-USDT running from 1 December. It is reported around every scheduled FOMC, CPI and payrolls release in `data/events.csv`, with none excluded, plus a false-alarm check on quiet hours (`scripts/track_record.py`).
+
+These are paper trades with simulated fills. We say so on every page.
+
+**Q26. Is the downloadable app just a wrapper?**
+It is the same engine, bundled with PyInstaller so nothing needs installing, inside an Electron shell. It gives you the cockpit, the DESK window, and menus that start the live paper desk, generate the track record, download data and re-run every benchmark. Installers for Windows, macOS and Linux are built by CI on each version tag.

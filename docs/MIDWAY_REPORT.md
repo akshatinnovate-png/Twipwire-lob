@@ -2,7 +2,7 @@
 
 **Team TM-BBAC6C06A8C** (Saharsh Kumar, Akshat Sarkar) · Theme 3, Problem 4: Order Book Forecasting Under Regime Shifts
 
-**Status: on plan, with the MVP and both stretch goals working.** Everything below is reproduced by `python scripts/run_benchmarks.py` (results in `results/tables.md`). The code, 10 unit tests and a live demo are in the repository.
+**Status: on plan, with the MVP and both stretch goals working.** Everything below is reproduced by `python scripts/run_benchmarks.py` (results in `results/tables.md`). The code, 31 unit tests and a live demo are in the repository.
 
 **Built (all four layers of the Round-1 plan).**
 * *Features*: 16 causal features from 10 book levels (multi-level OFI, imbalances, micro-price, depth slopes, spread, volatility ratio).
@@ -25,6 +25,14 @@
 
 **Since the shortlist.** The cockpit now runs the standard rolling-KS baseline live beside us, has a damage meter and self-explaining alarms, and can follow the live BTC-USDT book (warm-started from a recording, with replay fallback). `python demo.py` launches everything. We also ran a detector-variant study (`scripts/splice_study.py`): four ways to catch more cross-stock splices all broke the 2× false-alarm budget on real data, so we kept the shipped design.
 
-**Remaining (2–14 Dec).** Rehearse the demo; write up the time-ordered real-day alarms as case studies; record BTC-USDT around the December FOMC with `scripts/record_binance.py`.
+**The use case: a model-risk guard for a market-making desk.** We registered a desk test in advance (`docs/PREREGISTRATION.md`) and ran it on real LOBSTER order flow. The simulator models queue position, 1 ms latency and rebates. Three desks share the same frozen model: neutral (S0), always trusting the model (S1), and gated by TRIPWIRE's trust state (S2).
+* H1: S2 ≥ S1 on 3/3 normal days. **Pass.**
+* H2a: 48 % less adverse selection after a break (bar 30 %). **Pass.**
+* H2b: S2 wins 8/12 break slices (bar 9). **Fail.** Every loss came from a missed or late Monitor R alarm.
+* H3: S2 beats a KS guard and a drawdown stop. **Pass.**
 
-**Known limitations, stated up front.** Monitors need a re-arm window after an alarm: stock-to-stock splices were alarmed in 5 of 9 runs, and every miss came shortly after a prior alarm. A pure change in the scale of y is absorbed by the volatility normalisation rather than flagged. Gross edge per call is below half the spread, so this is a forecasting and monitoring system, not a trading claim.
+**Shipped since the shortlist:** a live paper desk on BTC-USDT and ETH-USDT, running from today, which logs a track record around every December FOMC, CPI and payrolls release; a crypto history backtest; an integration guide (`docs/INTEGRATION.md`); and a downloadable desktop app (Windows, macOS, Linux) with the cockpit, a DESK window, and menus for the paper desk, reports, data and benchmarks.
+
+**Remaining (2–14 Dec).** Keep the paper desk running and publish its track record at the finals; run the crypto backtest on the free Tardis days; rehearse the demo.
+
+**Known limitations, stated up front.** Monitors need a re-arm window after an alarm: stock-to-stock splices were alarmed in 5 of 9 runs, and every miss came shortly after a prior alarm. A pure change in the scale of y is absorbed by the volatility normalisation rather than flagged. Gross edge per call is below half the spread: TRIPWIRE is a risk system that decides when to stop believing a model, not a source of alpha. The desk test's frozen model has negative out-of-sample R², which makes H1 easier, and the injected break is a severe stress test.

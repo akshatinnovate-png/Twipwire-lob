@@ -13,6 +13,25 @@ Order-book models rarely crash when the market changes. More often they keep pro
 
 It runs on one CPU core, about 80 µs per book event, in pure Python and NumPy.
 
+### The use case: a model-risk guard for a market-making desk
+
+A market maker leans its quotes on a short-term model. When the market changes, the model keeps quoting confidently, and the desk pays for it in toxic fills until a person notices. TRIPWIRE runs beside the desk's own model and, on every book event, outputs a trust state (**TRUST / CAUTION / DISTRUST / RESTORE**) that scales the model's skew, the quote width, the size and the inventory limit. It can only make a desk more cautious, never more aggressive. See [`docs/INTEGRATION.md`](docs/INTEGRATION.md).
+
+We registered the test in advance ([`docs/PREREGISTRATION.md`](docs/PREREGISTRATION.md), committed before any desk run) and ran it on real LOBSTER order flow. The simulator models queue position, 1 ms latency and maker rebates:
+
+| Pre-registered hypothesis | Result | |
+|---|---|---|
+| H1: the guard is cheap on normal days | guarded desk ≥ always-on desk on 3/3 real days | **pass** |
+| H2a: ≥ 30 % less adverse selection after a break | **48 % less** (67.8k vs 130.5k $) | **pass** |
+| H2b: guarded desk wins ≥ 9 of 12 break slices | **8 / 12**; all 3 losses with no Monitor R alarm were within 1.7k $ | **fail** |
+| H3: beats the industry defaults | mean post-break P&L: guarded −97k, KS guard −138k, drawdown stop −139k $ | **pass** |
+
+Tables: [`results/desk/desk_tables.md`](results/desk/desk_tables.md). The H2b miss, the exploratory findings and the caveats (the injected break is a severe stress test) are written up next to the hypotheses. Two more lines of evidence run outside this sandbox: historical crypto books with real volatility breaks (`scripts/crypto_benchmarks.py`), and a **live paper desk on BTC-USDT and ETH-USDT from 1 December**. The paper desk's track record around every scheduled FOMC / CPI / payrolls release is produced by `scripts/track_record.py`.
+
+### Desktop app
+
+Download it from the repository's **Releases** page once a version tag such as `v1.0.0` has been pushed (Windows installer or portable `.exe`, macOS `.dmg`, Linux AppImage or `.deb`), or build it yourself (`desktop/README.md`). The Python engine is bundled, so nothing else needs to be installed. The app contains the live cockpit with the **DESK** window (trust light and live P&L of the neutral, always-on and guarded desks), plus menus to start the live paper desk, open its track record, download data and re-run every benchmark.
+
 ---
 
 ## Quick start (Windows, macOS or Linux; Python ≥ 3.9)
@@ -33,6 +52,10 @@ python scripts/preflight.py               # must print READY
 python demo.py --source AAPL              # or AMZN / MSFT
 ```
 
+Everything is also one command: `python tripwire_cli.py --help` (`serve`, `paper`, `report`, `record`, `fetch`, `cache`, `bench`, `preflight`).
+
+**Live paper desk** (needs internet; run it from 1 December on a laptop or server that stays on): `python tripwire_cli.py paper`. It paper-trades BTC-USDT and ETH-USDT with three desks and logs everything to `data/paper/`. `python tripwire_cli.py report` writes the track record. Check the release times in `data/events.csv` against the official Fed and BLS calendars and set `verified=yes`.
+
 **Live BTC-USDT** (needs internet on the laptop): record 30–45 minutes beforehand so the engine starts warm, then go live:
 
 ```bash
@@ -46,7 +69,8 @@ To reproduce **every number** in this README and in `results/`:
 
 ```bash
 python scripts/run_benchmarks.py          # ~25 min on 4 cores; --quick for a ~5 min smoke run
-python -m pytest -q                       # 18 tests: no look-ahead, valid bet, ARL, coverage, RLS, cockpit, mock-exchange BTC feed
+python -m pytest -q                       # 31 tests: no look-ahead, valid bet, ARL, coverage, queue fills, latency, guard, paper desk
+python scripts/desk_benchmarks.py         # ~5 min: the pre-registered desk test (H1-H3) -> results/desk/
 python scripts/splice_study.py            # ~40 min: detector variants vs splices and the false-alarm null
 ```
 
@@ -142,6 +166,13 @@ tripwire/          the method (numpy only)
   conformal.py     Stage C, conformal p-values, power-mixture bet, Shiryaev-Roberts
   aci.py           Stage D, online quantile tracking
   engine.py        the per-event loop and the causality contract
+  guard.py         TRUST/CAUTION/DISTRUST/RESTORE policy + fail-safes
+  mm.py            market-making simulator: queue-accurate LOBSTER fills, latency, rebates, markouts
+  minidesk.py      lightweight desks for the cockpit's DESK window
+  desk_models.py   the 'desk's own model' (small MLP) used in the desk test
+  changepoints.py  offline volatility change points (event labels that never come from TRIPWIRE)
+  crypto_data.py   Tardis / recorded crypto books and trades
+  livefeed.py      Binance public book + trades poller
   baselines.py     B1-B5
   metrics.py       cost of delay, silent-failure time, coverage, MCC, ...
   synthetic.py     2x2 regime generator (book-level)
@@ -150,19 +181,30 @@ scripts/
   cockpit.py       live demo server (stdlib) -> cockpit/index.html
   run_benchmarks.py  reproduces everything in results/
   report.py        tables, figures, cockpit summary
-  fetch_lobster.py / build_cache.py / record_binance.py / preflight.py
-tests/             10 tests
-docs/              DEMO_SCRIPT.md, JUDGE_QA.md, MIDWAY_REPORT.md
+  desk_benchmarks.py   pre-registered desk test H1-H3 -> results/desk/
+  crypto_benchmarks.py desk on historical crypto books (evidence B) -> results/crypto/
+  paper_desk.py        live paper desk, BTC/ETH (evidence C) -> data/paper/
+  track_record.py      paper-desk report around macro releases (H4/H5) -> results/paper/
+  fetch_lobster.py / fetch_crypto.py / build_cache.py / record_binance.py / preflight.py
+tripwire_cli.py    one CLI for all of the above (also the desktop app's backend)
+desktop/           Electron app + PyInstaller spec; .github/workflows/desktop.yml builds installers
+tests/             31 tests
+docs/              PREREGISTRATION.md, INTEGRATION.md, DEMO_SCRIPT.md, JUDGE_QA.md, MIDWAY_REPORT.md
 ```
 
 ## Data
 
 * **LOBSTER samples** (AAPL, AMZN, MSFT; 21 June 2012; 10 levels). Free from lobsterdata.com. `fetch_lobster.py` falls back to byte-identical public mirrors. We drop hidden executions (type 5) and halts (type 7), so every event changes the visible book.
-* **BTC-USDT**: `scripts/record_binance.py` records a 10-level book into LOBSTER format so it runs through the same pipeline. It is not used in the reported results.
+* **BTC-USDT / ETH-USDT**: `scripts/record_binance.py` and the paper desk record the 10-level book and trades into LOBSTER-style files, so they run through the same pipeline.
+* **Crypto history**: Tardis.dev publishes the first day of every month for free (`scripts/fetch_crypto.py`).
+* **Event calendar**: `data/events.csv` (FOMC, CPI, payrolls in December 2026). Times are marked unverified until they are checked against the official calendars.
 
 ## Limitations (stated before a judge asks)
 
 * The ARL guarantee is exact only for independent uniform p-values. Real LOB data are neither, so we report observed / nominal false-alarm ratios instead of assuming them.
 * After an alarm a monitor needs a short re-arm window (F: 20 blocks = 4000 events; R: 60 blocks) during which a second change is caught only by the pool's own adaptation.
 * Monitor R normalises by running volatility, so a pure change of scale in y is absorbed rather than flagged (this is visible in the AAPL→MSFT splice).
-* Event-time forecasts at h = 10–50 do not beat the spread on these stocks: the gross edge per call is below half the spread. This is a forecasting and monitoring system, not a trading strategy.
+* Event-time forecasts at h = 10–50 do not beat the spread on these stocks: the gross edge per call is below half the spread. TRIPWIRE is a monitoring and risk system; it does not claim alpha.
+* Desk test: the desk's frozen MLP has negative out-of-sample R² on all three real days, so "always trust the model" loses even without a break. The guard's normal-day result (H1) partly reflects how bad that model is. The injected break (β = −3) is a stress test: even the neutral desk loses about 138k $ in 30 minutes.
+* The cockpit's DESK window uses simple touch fills for speed. Every published desk number uses the queue-accurate simulator.
+* The crypto backtest and the live track record are produced on the team's machines; this repository's sandbox cannot reach exchanges.

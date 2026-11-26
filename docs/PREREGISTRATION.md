@@ -73,3 +73,25 @@ Bugs may be fixed. Any change is logged here with its date, the reason, and whet
 2. **2026-11-26, bug fix in the latency model (no full-benchmark results seen; the first run was stopped).**
    A quote re-decided while its previous version was still in flight restarted the in-flight timer. With latency longer than the gap between book events, quotes could never reach the market. Found by the live paper-desk test.
    In-flight quote messages are now queued per side and applied in order as each one's latency elapses, as an order gateway does.
+
+## Results (added 2026-11-26, after the run; nothing above was changed)
+
+Run: `python scripts/desk_benchmarks.py` (≈ 5 min on 4 cores). Full tables: `results/desk/desk_tables.md`; raw output: `results/desk/desk_results.json`.
+
+| Hypothesis | Bar | Result | Verdict |
+|---|---|---|---|
+| H1 (cheap on normal days) | S2 ≥ S1 − 5 % on ≥ 2/3 days | S2 beat S1 on all 3 days (AAPL −5,301 vs −8,758; AMZN −399 vs −2,259; MSFT −22 vs −23 $) | **PASS** |
+| H2a (less adverse selection) | ≥ 30 % lower than S1 | 67,813 vs 130,463 $ lost to adverse selection: **48 % lower** | **PASS** |
+| H2b (wins slice by slice) | S2 > S1 in ≥ 9/12 slices | **8/12** | **FAIL** |
+| H3 (beats the status quo) | S2 ≥ S3 and S4 | mean post-break P&L: S2 −97,214; S3 (KS guard) −137,723; S4 (drawdown guard) −139,095 $ | **PASS** |
+
+**Why H2b failed.** Monitor R did not fire after the break in 4 of the 12 slices. S2 lost three of those (AAPL and AMZN at the first offset, MSFT at the second; by 158 to 1,691 $, the cost of CAUTION widening) and won the fourth anyway. The fourth loss is the slice where Monitor R fired late (AAPL, after 649 events; −2,866 $). In every slice where Monitor R fired within 450 events, S2 beat S1, by up to 404,713 $. So this is a detection-power failure, not a reaction failure: the guard helps when it fires, and costs little when it doesn't.
+
+**Things this run also shows, which we did not pre-register and report as exploratory:**
+* **The frozen desk model is bad out of sample on real days** (R² −0.81 AAPL, −1.50 AMZN, −1.80 MSFT), and S1 loses to the neutral S0 even on normal days. This is the situation the guard exists for: a model that stopped working without anyone noticing. Monitor R switched S2's alpha off 4 times on AAPL, 3 on AMZN and 12 on MSFT (each time until the model's matured R² was positive again), which is why S2 beat S1 on all three days.
+* **The KS guard (S3) equals the neutral desk (S0) exactly**: rolling KS alarms so often that the alpha is always switched off. It never loses to S1, but it also never uses the model. That is the status quo's failure mode.
+* **The drawdown guard (S4)** reacts after the losses and recovers little (−139,095 vs S1 −156,198 $).
+* **Monitor F alone (S2-F) does nothing for P&L**; all of the benefit comes from Monitor R (S2-R ≈ S2). This is what the design predicts: a concept break leaves P(X) unchanged.
+* **Sensitivity.** S2 − S1 stays positive under 0 ms latency (+24,582 $, 6/12), back-of-queue cancellations (+58,955 $, 8/12) and 10 ms latency (+71,165 $, 11/12).
+* **Secondary alpha (TRIPWIRE's own adaptive pool).** The adaptive pool learns the reversed signal and *profits* after the break (S1 +137,904 $), and the guard then costs it 7 % (S2 +127,912 $). When the model adapts by itself, switching it off costs money. The injected break makes the signal three times stronger, so this result is optimistic.
+* **Scale.** The injected break (β = −3) is a severe stress test: even the neutral desk loses ≈ 138k $ in 30 minutes. Read the dollar figures as relative, not as typical losses.
