@@ -66,4 +66,7 @@ If H1–H3 fail, we report the failure in the finals deck and the README, with t
 Bugs may be fixed. Any change is logged here with its date, the reason, and whether results had already been seen.
 
 ## Amendments
-*(none yet)*
+1. **2026-11-26, bug fix to the break injection for the desk simulation (one slice's results had been seen).**
+   The forecasting benchmark injects a break into the *labels*, then rebuilds a level series as h interleaved chains (`level[t+h] = level[t] + y[t]`). That is valid for scoring forecasts but is **not a price path**: neighbouring events sit on different chains, so the shifted book jumps by hundreds of ticks between events. On the first slice tested this produced ~1,700 spurious fills and a −$11k loss for *every* desk, including the neutral one.
+   The fix injects the same reversed-and-tripled signal into the price path itself: from τ on, each event's mid move gets (β−1)/h times the signal of the last h events, so the h-event-ahead move carries (β−1) × signal, as in our synthetic generator. Prices are rounded cumulatively to whole ticks.
+   Desks, settings, metrics and pass criteria are unchanged.
